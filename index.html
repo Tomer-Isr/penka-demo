@@ -594,7 +594,7 @@ function makeBigCup(scene, pos) {
 
 </script>
 <script>
-(() => {
+﻿(() => {
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const MOBILE = () => innerWidth <= 820;
   gsap.registerPlugin(ScrollTrigger, SplitText);
@@ -638,7 +638,7 @@ function makeBigCup(scene, pos) {
       pour: () => { const v = cup.lowestRim(new THREE.Vector3()).project(cam);
         return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (0.5 - v.y * 0.5) * innerHeight, a: FLOW.alpha, on: FLOW.pouring, p: SEQ.tl && SEQ.tl.progress(),
           fill: PF.f, poured: FLOW.poured, fillOfPoured: fillOf(FLOW.poured), levelY: LQ.uLevel.value,
-          streamBottom: stream ? (0.5 - streamEnd.clone().project(cam).y * 0.5) * innerHeight : null, rimClear: stream ? RIMCLR.v : null, solid: stream ? RIMCLR.solid : null, flow: stream ? RIMCLR.q : null, drops: drops.slice(3).filter(d => d.visible).length, air: drops.filter(d => d.visible).length + (stream ? 1 : 0) }; },
+          streamBottom: stream ? (0.5 - streamEnd.clone().project(cam).y * 0.5) * innerHeight : null, rimClear: stream ? RIMCLR.v : null, solid: stream ? RIMCLR.solid : null, kTop: stream ? RIMCLR.kTop : null, kLow: stream ? RIMCLR.kLow : null, flow: stream ? RIMCLR.q : null, drops: drops.slice(3).filter(d => d.visible).length, air: drops.filter(d => d.visible).length + (stream ? 1 : 0) }; },
       beans: () => beans.list.filter(b => b.m.visible).map(b => { const v = b.m.position.clone().project(cam), r = b.m.scale.x;
         const e = b.m.position.clone().add(new THREE.Vector3(r, r, 0)).project(cam);
         return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (0.5 - v.y * 0.5) * innerHeight, r: Math.abs(e.x - v.x) * 0.5 * innerWidth * 1.1 }; }),
@@ -931,11 +931,27 @@ function makeBigCup(scene, pos) {
     }
   }
   const RIMCLR = { v: null };
+  // радиус струи от потока: сечение ∝ потоку → радиус ∝ √потока (было 0.009 + 0.033·поток — и нулевой поток давал
+  // заметную струю: в конце налива она оставалась толстой, когда кофе уже почти нет; DEFECTS №28)
+  const rOf = f => 0.042 * Math.sqrt(Math.max(0, f));
+  const FH = [];                                             // [время, поток у кромки] за последние 3 с
+  const flowAt = T => {                                      // поток, вылившийся в момент T (линейно между кадрами)
+    if (!FH.length || T >= FH[FH.length - 1][0]) return FH.length ? FH[FH.length - 1][1] : 0;
+    for (let i = FH.length - 1; i > 0; i--) if (FH[i - 1][0] <= T) {
+      const [t0, f0] = FH[i - 1], [t1, f1] = FH[i]; return f0 + (f1 - f0) * (t1 > t0 ? (T - t0) / (t1 - t0) : 0); }
+    return FH[0][1];
+  };
   const UP = new THREE.Vector3(0, 1, 0), outD = new THREE.Vector3(), tanD = new THREE.Vector3(), streamEnd = new THREE.Vector3();
   function updateStream(time) {
     if (stream) { stream.geometry.dispose(); scene.remove(stream); stream = null; }
     drops.forEach(d => d.visible = false);
     const qn = SEQ.on ? 0 : FLOW.q;
+    // история потока у кромки (DEFECTS №28): каждый участок струи летит с той толщиной, с какой вылился. Поток
+    // слабеет — у кромки струя тонкая, ниже ещё долетает толстая; струя начинается — её фронт падает сверху.
+    // Раньше вся струя была одной толщины по текущему потоку: кофе в стакане уже у кромки, а струя ещё толстая
+    // и висит отдельно (Томер 27.10, «и люди замечают»)
+    FH.push([time, FLOW.pouring && !SEQ.on && S.hide <= 0.5 ? Math.max(0.01, Math.sqrt(Math.min(1, qn)) * Math.min(1, Math.pow(FLOW.V / 0.14, 0.7))) : 0]);
+    while (FH.length > 2 && FH[1][0] < time - 3) FH.shift();
     // струя не входит в кофе на странице, а пролетает за нижний край экрана — воронки и шлейфа нет
     // (Томер 25.10: «не растворяется, не разбивается — просто упала вниз гравитацией»)
     LQ.uPour.value = 0;
@@ -965,12 +981,12 @@ function makeBigCup(scene, pos) {
     // толщина струи — из скорости, с которой убывает объём; дуга через бортик — только пока кофе много
     const fullness = Math.min(1, FLOW.V * 2.2);
     // толщина: скорость убывания × остаток — когда кофе почти нет, струя сходит на нитку, а не обрывается толстой
-    const flow = tailT >= 0 ? 0.08 : Math.max(0.06, Math.sqrt(Math.min(1, qn)) * Math.min(1, Math.pow(FLOW.V / 0.14, 0.7)));
+    const flow = tailT >= 0 ? 0.08 : Math.max(0.01, Math.sqrt(Math.min(1, qn)) * Math.min(1, Math.pow(FLOW.V / 0.14, 0.7)));
     // язык — дуга вокруг трубки бортика на расстоянии своей толщины: изнутри → через верх (по мировой вертикали) →
     // наружу. Раньше — парабола от точки кромки: при малом остатке её середина уходила ниже верха бортика, и даже
     // через три точки на окружности парабола срезает углы — струя проходила сквозь бортик, а он оставался чистым
     // (Томер 26.10, DEFECTS №23)
-    const RC = cup.RIM_C, Q = cup.lowestRim(vQ, RC.r, RC.y), rt = RC.tube * sc, th = sc * (0.009 + 0.033 * flow);
+    const RC = cup.RIM_C, Q = cup.lowestRim(vQ, RC.r, RC.y), rt = RC.tube * sc, th = sc * rOf(flow);
     const RR = rt + th * 1.05 + 0.001 * sc;
     vel.copy(outD).multiplyScalar(0.12 + 0.3 * flow); vel.y = -0.05;
     const P1 = PourCurve.prototype.arc.call({ q: Q, o: outD, R: RR, f0: Math.PI * 0.94, f1: -0.25 }, 1, new THREE.Vector3());
@@ -999,7 +1015,7 @@ function makeBigCup(scene, pos) {
       const cl = vC.length() - rt - th * (1 - 0.45 * fullness * Math.exp(-i / 24 * 0.14 * 16));
       RIMCLR.v = RIMCLR.v === null ? cl : Math.min(RIMCLR.v, cl);
     }
-    const seg = 200, base = sc * (0.009 + 0.033 * flow);
+    const seg = 200, base = sc * rOf(flow);
     SU.uGlow.value = 0.15 + 0.45 * flow;
     const g = new THREE.TubeGeometry(curve, seg, base, 16, false);
     const totLen = curve.getLength(); SU.uLen.value = totLen; SU.uT.value = time;
@@ -1014,6 +1030,10 @@ function makeBigCup(scene, pos) {
       const tailK = (tailCut > 0 ? Math.min(1, uu * 6) : 1) * (tb < tEnd ? Math.min(1, Math.sqrt((1 - uu) * 40)) : 1);
       const z = Math.max(0, P1.y - c0.y);
       let k = tailK * Math.pow(1 + 2 * 9.8 * z / 0.7, -0.25) * (1 + 0.006 * Math.sin(uu * 30 - time * 18));
+      // толщина по истории: точка свободного падения через tf с вылилась в момент time − tf (язык у кромки — текущий)
+      const ug = curve.u0 + uu * (1 - curve.u0);
+      if (ug > curve.a) k *= Math.min(3, rOf(flowAt(time - (ug - curve.a) / (1 - curve.a) * tEnd)) / rOf(flow));
+      if (i === Math.round(seg * 0.2)) RIMCLR.kTop = k; else if (i === Math.round(seg * 0.6)) RIMCLR.kLow = k;
       if (bead > 0) { const rr = Math.max(0.012 * sc, base * k); k *= 1 + 0.16 * bead * Math.sin(2 * Math.PI * (uu * totLen) / (14 * rr) - time * 3); }
       const wide = 1 + 0.8 * fullness * Math.exp(-uu * 18);
       const flat = 1 - 0.45 * fullness * Math.exp(-uu * 16);

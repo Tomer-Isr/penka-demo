@@ -30,6 +30,22 @@ a{color:inherit}
 .btn:active{transform:scale(.98)}
 .btn:focus-visible{outline:3px solid var(--ink);outline-offset:4px}
 .btn svg{width:18px;height:18px}
+button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1.5px rgba(21,23,28,.18)}
+.btn.ghost:hover{box-shadow:inset 0 0 0 1.5px rgba(21,23,28,.4)}
+.cta{display:flex;flex-wrap:wrap;gap:12px}
+/* автопрокрутка «Налить»: плашка паузы внизу по центру, пока история едет сама */
+.autopill{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:10px;
+  padding:12px 20px 12px 16px;border:0;border-radius:999px;background:rgba(21,23,28,.82);color:#fff;font:600 15px/1 var(--body,inherit);cursor:pointer;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 10px 30px -12px rgba(0,0,0,.5)}
+.autopill[hidden]{display:none}
+.autopill .i{width:12px;height:12px;background:currentColor;clip-path:polygon(0 0,35% 0,35% 100%,0 100%,0 0,65% 0,100% 0,100% 100%,65% 100%,65% 0)}
+.autopill.paused .i{clip-path:polygon(10% 0,100% 50%,10% 100%)}
+.autopill:focus-visible{outline:3px solid var(--cobalt);outline-offset:3px}
+/* где мы в истории: тонкая полоска справа, до меню */
+.storybar{position:fixed;right:max(6px,env(safe-area-inset-right,0px));top:50%;transform:translateY(-50%);width:3px;height:28vh;border-radius:3px;background:rgba(128,120,110,.22);z-index:20;pointer-events:none;overflow:hidden;opacity:0;transition:opacity .4s}
+.storybar.on{opacity:1}
+.storybar i{position:absolute;left:0;top:0;width:100%;height:100%;background:var(--cobalt);transform-origin:top;transform:scaleY(0)}
 
 /* nav */
 .nav{position:fixed;top:0;left:0;right:0;z-index:20;padding-top:env(safe-area-inset-top,0px);mix-blend-mode:difference;color:#fff}
@@ -174,12 +190,16 @@ a{color:inherit}
 <div class="flood" id="flood"></div>
 <header class="nav"><div class="wrap"><a class="logo" href="#top">пенка</a><ul><li><a href="#menu">Меню</a></li><li><a href="#card">Карта</a></li><li><a href="#visit">Адрес</a></li></ul></div></header>
 
+<!-- автопрокрутка истории: пауза/продолжить, пока идёт; полоска — где мы в истории (до меню) -->
+<button class="autopill" id="autoPill" type="button" hidden aria-label="Пауза"><span class="i"></span><span class="t">Пауза</span></button>
+<div class="storybar" aria-hidden="true"><i id="storyFill"></i></div>
 <main id="top">
   <section class="hero">
     <div class="wrap"><div class="copy">
       <h1 data-split>Пенка сверху. <em>Кофе внутри.</em></h1>
       <p>Маленький кофе-бар с собой во Флорентине. Варим с семи утра и отдаём за две минуты.</p>
-      <div><a class="btn" href="#menu">Смотреть меню <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></a></div>
+      <div class="cta"><button class="btn" id="pourBtn" type="button">Налить <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg></button>
+        <a class="btn ghost" href="#menu">Меню <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></a></div>
     </div></div>
   </section>
 
@@ -501,9 +521,9 @@ function makeBeans(scene, cam) {
   // [x, y в долях экрана (NDC), глубина z (к зрителю +), размер]
   const SPOTS = {
     // телефон: только над текстом (текст — ниже y ≈ 0.1), крупнее — экран узкий
-    mob: [[-0.78, 0.86, 0.9, 0.095], [0.72, 0.78, -0.7, 0.095], [-0.66, 0.24, 1.3, 0.09], [0.8, 0.26, 0.5, 0.095], [-0.86, 0.55, -1.3, 0.11],
+    mob: [[-0.8, 0.72, 0.9, 0.095], [0.72, 0.78, -0.7, 0.095], [-0.66, 0.24, 1.3, 0.09], [0.8, 0.26, 0.5, 0.095], [-0.86, 0.55, -1.3, 0.11],
       [0.3, 0.97, -1.6, 0.11], [0.62, 0.5, 1.5, 0.085], [-0.3, 0.98, 0.3, 0.08], [0.02, 0.16, -1.0, 0.09]],
-    desk: [[0.12, 0.7, 0.9, 0.07], [0.9, 0.75, -0.8, 0.08], [0.18, -0.35, 1.3, 0.075], [0.95, -0.2, 0.5, 0.07], [0.05, 0.25, -1.4, 0.08],
+    desk: [[0.12, 0.7, 0.9, 0.07], [0.9, 0.6, -0.8, 0.08], [0.18, -0.35, 1.3, 0.075], [0.95, -0.2, 0.5, 0.07], [0.05, 0.25, -1.4, 0.08],
       [0.62, 0.92, -1.7, 0.08], [0.78, -0.75, 1.4, 0.07], [0.35, -0.85, -0.6, 0.07], [0.55, 0.55, 1.6, 0.06]],
   };
   const list = SPOTS.mob.map((_, i) => {
@@ -1022,12 +1042,14 @@ function makeBigCup(scene, pos) {
     const pos = g.attributes.position, cnt = 17, c0 = new THREE.Vector3(), p = new THREE.Vector3(), off = new THREE.Vector3();
     // тонкая нитка в конце — мягкие бусины Плато–Рэлея (длинные, неглубокие: глубокие на 120 сегментах давали
     // «рубленую» струю — QA 25.10)
-    const bead = Math.max(0, 1 - flow * 3.5) * 0.6 + tailCut * 0.4;
+    // бусины — только у оторвавшейся нитки: на сплошной тонкой струе они давали полосатый «шнур» (Томер 28.10)
+    const bead = tailCut > 0 ? 0.4 + Math.max(0, 1 - flow * 3.5) * 0.3 : 0;
     for (let i = 0; i <= seg; i++) {
       const uu = i / seg;
       curve.getPoint(uu, c0);
       // оторванный конец нитки закруглён; при распаде на капли закруглён и нижний конец сплошной части
-      const tailK = (tailCut > 0 ? Math.min(1, uu * 6) : 1) * (tb < tEnd ? Math.min(1, Math.sqrt((1 - uu) * 40)) : 1);
+      // начало струи у кромки закрыто плавно — открытый торец трубки читался тёмным узелком на бортике (28.10)
+      const tailK = (tailCut > 0 ? Math.min(1, uu * 6) : Math.min(1, Math.sqrt(uu * 25))) * (tb < tEnd ? Math.min(1, Math.sqrt((1 - uu) * 40)) : 1);
       const z = Math.max(0, P1.y - c0.y);
       let k = tailK * Math.pow(1 + 2 * 9.8 * z / 0.7, -0.25) * (1 + 0.006 * Math.sin(uu * 30 - time * 18));
       // толщина по истории: точка свободного падения через tf с вылилась в момент time − tf (язык у кромки — текущий)
@@ -1406,7 +1428,8 @@ function makeBigCup(scene, pos) {
       CH.p += Math.max(-vmax * dt, Math.min(vmax * dt, (CH.target - CH.p) * (1 - Math.exp(-dt / 0.28))));
       if (Math.abs(CH.p - SEQ.tl.progress()) > 1e-6) SEQ.tl.progress(CH.p);
       // держим секцию на краю, пока налив не доиграл (иначе стакан уезжал бы с недолитым кофе)
-      if (lenis && !REDUCED && !back && scrollY > st.end - 1 && CH.p < 0.86) lenis.scrollTo(st.end - 1, { immediate: true });
+      // при автопрокрутке («Налить») край не держим силой — она сама дожидается налива (иначе сбивалась и вставала)
+      if (lenis && !REDUCED && !back && !(window.__auto && window.__auto.on && !window.__auto.paused) && scrollY > st.end - 1 && CH.p < 0.86) lenis.scrollTo(st.end - 1, { immediate: true });
     });
     // ПЕРВЫЙ ЭКРАН: пока читают заголовок, стакан медленно проворачивается на пол-оборота (Томер 24.10:
     // «не быстро, чтобы ко второй секции он сделал примерно наоборот»). Отдельная величина turn — её
@@ -1574,6 +1597,44 @@ function makeBigCup(scene, pos) {
         S.scale = 1 - 0.18 * Math.sin(Math.min(1, P.t * 1.4) * Math.PI / 2);
         S.yaw = FACE(pp.x) + 0.45 * Math.sin(P.t * Math.PI);   // мягкий доворот туда и обратно
       } });
+
+    // ── «Налить» (Томер 28.10): история едет сама в задуманном темпе — подъезд к наливу, налив ровно (~2.3 с на экран
+    // прокрутки: темп наклона держит догонялка, она успевает), переезд к меню. Касание, колесо, клавиша — пауза, дальше
+    // крутишь сам, как обычно; плашка внизу — «Пауза» / «Продолжить». Полоска справа — где мы в истории (до меню)
+    {
+      const btn = document.getElementById('pourBtn'), pill = document.getElementById('autoPill'), fillEl = document.getElementById('storyFill'), bar = fillEl.parentElement;
+      const st = SEQ.tl.scrollTrigger, menuTop = () => document.getElementById('menu').getBoundingClientRect().top + scrollY;
+      const inOut = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const AUTO = { on: false, paused: false, leg: 0 };
+      window.__auto = AUTO;   // для tests/
+      const legs = () => [[st.start, 1.6, inOut], [st.end, (st.end - st.start) / innerHeight * 2.3, t => t, true], [menuTop(), 1.8, inOut]];
+      const setPill = () => { pill.hidden = !AUTO.on; pill.classList.toggle('paused', AUTO.paused);
+        pill.querySelector('.t').textContent = AUTO.paused ? 'Продолжить' : 'Пауза'; pill.setAttribute('aria-label', AUTO.paused ? 'Продолжить' : 'Пауза'); };
+      const finish = () => { AUTO.on = false; AUTO.paused = false; setPill(); };
+      const runLeg = () => {
+        if (!AUTO.on || AUTO.paused) return;
+        const L = legs(); while (AUTO.leg < L.length && L[AUTO.leg][0] <= scrollY + 4) AUTO.leg++;
+        if (AUTO.leg >= L.length) return finish();
+        const [y, d, easing, pour] = L[AUTO.leg];
+        // с середины отрезка налива — время по оставшемуся пути (темп тот же)
+        const dur = pour ? d * Math.max(0.05, (y - scrollY) / (st.end - st.start)) : d;
+        if (!lenis) { scrollTo(0, y); AUTO.leg++; return runLeg(); }
+        // после отрезка налива — дождаться, пока налив доиграет (догонялка), и только потом ехать к меню
+        const next = () => { if (!AUTO.on || AUTO.paused) return; if (pour && SEQ.tl.progress() < 0.9) return gsap.delayedCall(0.1, next); AUTO.leg++; runLeg(); };
+        lenis.scrollTo(y, { duration: dur, easing, force: true, onComplete: next });
+      };
+      const pause = () => { if (!AUTO.on || AUTO.paused) return; AUTO.paused = true; if (lenis) { lenis.stop(); lenis.start(); } setPill(); };
+      btn.addEventListener('click', () => { AUTO.on = true; AUTO.paused = false; AUTO.leg = 0; setPill(); runLeg(); });
+      pill.addEventListener('click', () => { if (AUTO.paused) { AUTO.paused = false; setPill(); runLeg(); } else pause(); });
+      const userInput = e => { if (e.target && e.target.closest && e.target.closest('#autoPill,#pourBtn')) return; pause(); };
+      ['wheel', 'touchstart', 'keydown'].forEach(ev => addEventListener(ev, userInput, { passive: true }));
+      gsap.ticker.add(() => {
+        const m = menuTop(), k = Math.max(0, Math.min(1, scrollY / m));
+        fillEl.style.transform = `scaleY(${k})`;
+        bar.classList.toggle('on', scrollY > 40 && scrollY < m + innerHeight * 0.3);
+        if (AUTO.on && AUTO.paused && (scrollY > m + innerHeight * 0.3 || scrollY < 10)) finish();   // ушли из истории — плашка не нужна
+      });
+    }
 
     const stamps = gsap.utils.toArray('.stamp');
     const stl = gsap.timeline({ scrollTrigger: { trigger: '#card', start: 'top top', end: '+=140%', pin: !MOBILE(), scrub: 0.5 } });

@@ -602,7 +602,24 @@ function makeBigCup(scene, pos) {
   // ── плавный скролл: один движок (Lenis), связан с ScrollTrigger ──
   let lenis = null;
   if (!REDUCED) {
-    lenis = new Lenis({ lerp: 0.09, smoothWheel: true });
+    // Регулятор скорости в наливе (Томер 28.10: быстрый свайп/колесо — «всё дёргается, налив не успевает»): пока
+    // закреплена секция налива, прокрутка идёт не быстрее 0.55 экрана/с: каждое движение колеса/пальца тратит
+    // «бюджет», который копится со временем (не больше 12 % экрана про запас) — как бы ни крутили, налив идёт ровно.
+    // Палец в наливе тоже идёт через Lenis (syncTouch включается только там — на остальной странице касание
+    // остаётся родным). Ограничение «на сколько можно обогнать» зависело от частоты кадров — не держало. DEFECTS №29
+    const pourZone = () => { const st = SEQ.tl && SEQ.tl.scrollTrigger; return st && lenis.animatedScroll >= st.start - innerHeight * 0.3 && lenis.animatedScroll <= st.end; };
+    const GOV = { budget: 0, t: 0, n: 0, zone: () => !!pourZone() };
+    window.__gov = GOV;   // для tests/
+    lenis = new Lenis({ lerp: 0.09, smoothWheel: true, virtualScroll: d => {
+      GOV.n++;
+      if (!pourZone()) return true;
+      const now = performance.now() / 1000, cap = innerHeight * 0.12;
+      GOV.budget = Math.min(cap, GOV.budget + (GOV.t ? now - GOV.t : 1) * innerHeight * 0.55); GOV.t = now;
+      const step = Math.max(-GOV.budget, Math.min(GOV.budget, d.deltaY));
+      GOV.budget -= Math.abs(step); d.deltaY = step;
+      return true;
+    } });
+    lenis.on('scroll', () => { lenis.options.syncTouch = !!pourZone(); });
     lenis.on('scroll', ScrollTrigger.update);
     window.__lenis = lenis;   // для tests/
     gsap.ticker.add(t => lenis.raf(t * 1000));

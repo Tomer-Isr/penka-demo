@@ -658,7 +658,7 @@ function makeBigCup(scene, pos) {
       pour: () => { const v = cup.lowestRim(new THREE.Vector3()).project(cam);
         return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (0.5 - v.y * 0.5) * innerHeight, a: FLOW.alpha, on: FLOW.pouring, p: SEQ.tl && SEQ.tl.progress(),
           fill: PF.f, poured: FLOW.poured, fillOfPoured: fillOf(FLOW.poured), levelY: LQ.uLevel.value,
-          streamBottom: stream ? (0.5 - streamEnd.clone().project(cam).y * 0.5) * innerHeight : null, rimClear: stream ? RIMCLR.v : null, solid: stream ? RIMCLR.solid : null, kTop: stream ? RIMCLR.kTop : null, kLow: stream ? RIMCLR.kLow : null, flow: stream ? RIMCLR.q : null, drops: drops.slice(3).filter(d => d.visible).length, air: drops.filter(d => d.visible).length + (stream ? 1 : 0) }; },
+          streamBottom: stream ? (0.5 - streamEnd.clone().project(cam).y * 0.5) * innerHeight : null, rimClear: stream ? RIMCLR.v : null, meshClear: stream ? meshClear() : null, exitSide: stream ? RIMCLR.side : null, solid: stream ? RIMCLR.solid : null, kTop: stream ? RIMCLR.kTop : null, kLow: stream ? RIMCLR.kLow : null, flow: stream ? RIMCLR.q : null, drops: drops.slice(3).filter(d => d.visible).length, air: drops.filter(d => d.visible).length + (stream ? 1 : 0) }; },
       beans: () => beans.list.filter(b => b.m.visible).map(b => { const v = b.m.position.clone().project(cam), r = b.m.scale.x;
         const e = b.m.position.clone().add(new THREE.Vector3(r, r, 0)).project(cam);
         return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (0.5 - v.y * 0.5) * innerHeight, r: Math.abs(e.x - v.x) * 0.5 * innerWidth * 1.1 }; }),
@@ -771,6 +771,24 @@ function makeBigCup(scene, pos) {
   };
   if (cup && streamEnv) { const m = cup.coffeeIn.material; m.envMap = streamEnv; m.envMapIntensity = 0.85; m.color.setHex(0x120804); }
   let stream = null;
+  // сетка струи — одна на всё время, вершины переписываются на месте. Раньше каждый кадр — новая TubeGeometry
+  // (3400 вершин) + dispose старой: на телефоне мусор и новая выгрузка буфера в GPU каждый кадр — подёргивания (28.10)
+  const SSEG = 200, SRAD = 16, SCNT = SRAD + 1;
+  const streamMesh = R && (() => {
+    const g = new THREE.BufferGeometry(), n = (SSEG + 1) * SCNT, idx = [];
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage));
+    for (let i = 1; i <= SSEG; i++) for (let j = 1; j <= SRAD; j++) {
+      const a = SCNT * (i - 1) + j - 1, b = SCNT * i + j - 1, c = SCNT * i + j, d = SCNT * (i - 1) + j;
+      idx.push(a, b, d, b, c, d);
+    }
+    g.setIndex(idx);
+    const m = new THREE.Mesh(g, coffeeMat); m.renderOrder = 2; m.frustumCulled = false; m.visible = false; scene.add(m);
+    return m;
+  })();
+  const SP = Array.from({ length: SSEG + 1 }, () => new THREE.Vector3()), SL = new Float32Array(SSEG + 1);
+  const sT = new THREE.Vector3(), sN = new THREE.Vector3(), sC = new THREE.Vector3(), sO = new THREE.Vector3(), sX = new THREE.Vector3();
   const drops = [];
   if (R) for (let i = 0; i < 24; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), coffeeMat); d.visible = false; scene.add(d); drops.push(d); }
   const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3(), vQ = new THREE.Vector3(), vD = new THREE.Vector3(), vE = new THREE.Vector3(), vel = new THREE.Vector3();
@@ -949,8 +967,23 @@ function makeBigCup(scene, pos) {
       const t = (u - this.a) / (1 - this.a) * this.tEnd;  // свободное падение
       return out.set(this.p1.x + this.v0.x * t, this.p1.y + this.v0.y * t - 4.9 * t * t, this.p1.z + this.v0.z * t);
     }
+    // TubeGeometry берёт точки по длине дуги: короткий язык через бортик (доли процента длины струи) ложился на 2–3
+    // хорды и резал бортик — «кофе льётся сквозь стакан» (Томер 28.10, DEFECTS №31). Сетка — по тому же параметру u,
+    // по которому считается толщина: на язык приходится 14% сегментов
+    getPointAt(u, out) { return this.getPoint(u, out); }
+    getTangentAt(u, out) { return this.getTangent(u, out); }
   }
   const RIMCLR = { v: null };
+  // для tests/: зазор НАСТОЯЩЕЙ сетки струи над трубкой бортика (по вершинам, в осях стакана). RIMCLR.v меряет кривую,
+  // а сетку строил TubeGeometry по длине дуги — язык через бортик ложился на 2–3 хорды и резал бортик (DEFECTS №31)
+  function meshClear() {
+    const RC = cup.RIM_C, pos = stream.geometry.attributes.position, v = new THREE.Vector3(); let m = 1;
+    for (let i = 0; i < pos.count; i++) {
+      cup.inner.worldToLocal(v.fromBufferAttribute(pos, i));
+      m = Math.min(m, Math.hypot(Math.hypot(v.x, v.z) - RC.r, v.y - RC.y) - RC.tube);
+    }
+    return m;
+  }
   // радиус струи от потока: сечение ∝ потоку → радиус ∝ √потока (было 0.009 + 0.033·поток — и нулевой поток давал
   // заметную струю: в конце налива она оставалась толстой, когда кофе уже почти нет; DEFECTS №28)
   const rOf = f => 0.042 * Math.sqrt(Math.max(0, f));
@@ -963,7 +996,7 @@ function makeBigCup(scene, pos) {
   };
   const UP = new THREE.Vector3(0, 1, 0), outD = new THREE.Vector3(), tanD = new THREE.Vector3(), streamEnd = new THREE.Vector3();
   function updateStream(time) {
-    if (stream) { stream.geometry.dispose(); scene.remove(stream); stream = null; }
+    if (stream) { stream.visible = false; stream = null; }
     drops.forEach(d => d.visible = false);
     const qn = SEQ.on ? 0 : FLOW.q;
     // история потока у кромки (DEFECTS №28): каждый участок струи летит с той толщиной, с какой вылился. Поток
@@ -980,7 +1013,13 @@ function makeBigCup(scene, pos) {
     if (S.hide > 0.5 || SEQ.on || !(FLOW.pouring || (tailT >= 0 && tailT < 1.8))) return;
     const sc = cup.group.scale.x;
     const lip = cup.lowestRim(vA), mouth = cup.mouthWorld(vB);
-    outD.set(lip.x - mouth.x, 0, lip.z - mouth.z).normalize();
+    // «наружу» — куда смотрит раскрытие стакана (ось по горизонтали). Было «от центра рта к нижней точке кромки»:
+    // к 90° наклона рот оказывается ровно над кромкой, вектор вырождается, дальше переворачивается — язык
+    // загибался через бортик НАЗАД, под стакан, и струя выходила из-под стенки: «кофе льётся сквозь стакан»
+    // (Томер 28.10, DEFECTS №31)
+    cup.inner.localToWorld(outD.set(0, 1, 0)).sub(cup.inner.localToWorld(sX.set(0, 0, 0))); outD.y = 0;
+    if (outD.lengthSq() < 1e-8) outD.set(lip.x - mouth.x, 0, lip.z - mouth.z);
+    outD.normalize();
     tanD.crossVectors(UP, outD).normalize();
     // низ струи — за нижним краем экрана: кофе пролетает все секции вниз, на экране не обрывается
     const surf = screenToWorldY(innerHeight + 40, lip.z);
@@ -1035,18 +1074,23 @@ function makeBigCup(scene, pos) {
       const cl = vC.length() - rt - th * (1 - 0.45 * fullness * Math.exp(-i / 24 * 0.14 * 16));
       RIMCLR.v = RIMCLR.v === null ? cl : Math.min(RIMCLR.v, cl);
     }
-    const seg = 200, base = sc * rOf(flow);
+    const seg = SSEG, base = sc * rOf(flow);
     SU.uGlow.value = 0.15 + 0.45 * flow;
-    const g = new THREE.TubeGeometry(curve, seg, base, 16, false);
-    const totLen = curve.getLength(); SU.uLen.value = totLen; SU.uT.value = time;
-    const pos = g.attributes.position, cnt = 17, c0 = new THREE.Vector3(), p = new THREE.Vector3(), off = new THREE.Vector3();
+    // ось — по параметру u кривой (язык через бортик получает свои 14% сегментов, DEFECTS №31), длина — накопленная
+    for (let i = 0; i <= seg; i++) { curve.getPoint(i / seg, SP[i]); SL[i] = i ? SL[i - 1] + SP[i].distanceTo(SP[i - 1]) : 0; }
+    const totLen = SL[seg]; SU.uLen.value = totLen; SU.uT.value = time;
+    const g = streamMesh.geometry, pos = g.attributes.position, uvs = g.attributes.uv, cnt = SCNT;
+    const c0 = sC, p = sX, off = sO, T = sT, N = sN;
     // тонкая нитка в конце — мягкие бусины Плато–Рэлея (длинные, неглубокие: глубокие на 120 сегментах давали
     // «рубленую» струю — QA 25.10)
     // бусины — только у оторвавшейся нитки: на сплошной тонкой струе они давали полосатый «шнур» (Томер 28.10)
     const bead = tailCut > 0 ? 0.4 + Math.max(0, 1 - flow * 3.5) * 0.3 : 0;
     for (let i = 0; i <= seg; i++) {
       const uu = i / seg;
-      curve.getPoint(uu, c0);
+      c0.copy(SP[i]);
+      // сечение: струя лежит в вертикальной плоскости (наружу, вверх) — бинормаль всегда tanD, без кручения Френе
+      T.subVectors(SP[Math.min(seg, i + 1)], SP[Math.max(0, i - 1)]).normalize();
+      N.crossVectors(tanD, T).normalize();
       // оторванный конец нитки закруглён; при распаде на капли закруглён и нижний конец сплошной части
       // начало струи у кромки закрыто плавно — открытый торец трубки читался тёмным узелком на бортике (28.10)
       const tailK = (tailCut > 0 ? Math.min(1, uu * 6) : Math.min(1, Math.sqrt(uu * 25))) * (tb < tEnd ? Math.min(1, Math.sqrt((1 - uu) * 40)) : 1);
@@ -1056,23 +1100,26 @@ function makeBigCup(scene, pos) {
       const ug = curve.u0 + uu * (1 - curve.u0);
       if (ug > curve.a) k *= Math.min(3, rOf(flowAt(time - (ug - curve.a) / (1 - curve.a) * tEnd)) / rOf(flow));
       if (i === Math.round(seg * 0.2)) RIMCLR.kTop = k; else if (i === Math.round(seg * 0.6)) RIMCLR.kLow = k;
-      if (bead > 0) { const rr = Math.max(0.012 * sc, base * k); k *= 1 + 0.16 * bead * Math.sin(2 * Math.PI * (uu * totLen) / (14 * rr) - time * 3); }
+      if (bead > 0) { const rr = Math.max(0.012 * sc, base * k); k *= 1 + 0.16 * bead * Math.sin(2 * Math.PI * SL[i] / (14 * rr) - time * 3); }
       const wide = 1 + 0.8 * fullness * Math.exp(-uu * 18);
       const flat = 1 - 0.45 * fullness * Math.exp(-uu * 16);
       for (let j = 0; j < cnt; j++) {
-        const idx = i * cnt + j;
-        off.fromBufferAttribute(pos, idx).sub(c0).multiplyScalar(k);
+        const idx = i * cnt + j, v = j / SRAD * Math.PI * 2;
+        off.copy(N).multiplyScalar(-Math.cos(v)).addScaledVector(tanD, Math.sin(v)).multiplyScalar(base * k);
         off.addScaledVector(tanD, off.dot(tanD) * (wide - 1));
         off.addScaledVector(UP, -off.dot(UP) * (1 - flat));
         p.copy(c0).add(off); pos.setXYZ(idx, p.x, p.y, p.z);
+        uvs.setXY(idx, totLen ? SL[i] / totLen : 0, j / SRAD);
       }
     }
+    pos.needsUpdate = true; uvs.needsUpdate = true;
     g.computeVertexNormals();
-    stream = new THREE.Mesh(g, coffeeMat); stream.renderOrder = 2; scene.add(stream);
+    stream = streamMesh; stream.visible = true;
     // для tests/: низ струи — конец траектории (при распаде её продолжают капли до низа экрана)
     curve.tEnd = tEnd; streamEnd.copy(curve.getPoint(1)); curve.tEnd = tb;
     RIMCLR.solid = (0.5 - curve.getPoint(1).project(cam).y * 0.5) * innerHeight - (0.5 - P1.clone().project(cam).y * 0.5) * innerHeight;   // для tests/: длина сплошной части, px
     RIMCLR.q = flow;
+    RIMCLR.side = cup.inner.worldToLocal(P1.clone()).y - cup.inner.worldToLocal(Q.clone()).y;   // для tests/, №31
     if (tb < tEnd) {
       // капли распада: k-я отрывается в момент k/ν, летит по той же траектории от точки схода; видны с tb до tEnd
       const nu = 7 + 40 * flow, pool = drops.slice(3), k0 = Math.floor((time - tEnd) * nu) + 1;

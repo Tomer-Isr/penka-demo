@@ -602,24 +602,7 @@ function makeBigCup(scene, pos) {
   // ── плавный скролл: один движок (Lenis), связан с ScrollTrigger ──
   let lenis = null;
   if (!REDUCED) {
-    // Регулятор скорости в наливе (Томер 28.10: быстрый свайп/колесо — «всё дёргается, налив не успевает»): пока
-    // закреплена секция налива, прокрутка идёт не быстрее 0.55 экрана/с: каждое движение колеса/пальца тратит
-    // «бюджет», который копится со временем (не больше 12 % экрана про запас) — как бы ни крутили, налив идёт ровно.
-    // Палец в наливе тоже идёт через Lenis (syncTouch включается только там — на остальной странице касание
-    // остаётся родным). Ограничение «на сколько можно обогнать» зависело от частоты кадров — не держало. DEFECTS №29
-    const pourZone = () => { const st = SEQ.tl && SEQ.tl.scrollTrigger; return st && lenis.animatedScroll >= st.start - innerHeight * 0.3 && lenis.animatedScroll <= st.end; };
-    const GOV = { budget: 0, t: 0, n: 0, zone: () => !!pourZone() };
-    window.__gov = GOV;   // для tests/
-    lenis = new Lenis({ lerp: 0.09, smoothWheel: true, virtualScroll: d => {
-      GOV.n++;
-      if (!pourZone()) return true;
-      const now = performance.now() / 1000, cap = innerHeight * 0.12;
-      GOV.budget = Math.min(cap, GOV.budget + (GOV.t ? now - GOV.t : 1) * innerHeight * 0.55); GOV.t = now;
-      const step = Math.max(-GOV.budget, Math.min(GOV.budget, d.deltaY));
-      GOV.budget -= Math.abs(step); d.deltaY = step;
-      return true;
-    } });
-    lenis.on('scroll', () => { lenis.options.syncTouch = !!pourZone(); });
+    lenis = new Lenis({ lerp: 0.09, smoothWheel: true });
     lenis.on('scroll', ScrollTrigger.update);
     window.__lenis = lenis;   // для tests/
     gsap.ticker.add(t => lenis.raf(t * 1000));
@@ -1403,7 +1386,28 @@ function makeBigCup(scene, pos) {
       const t2 = t * t, t3 = t2 * t;
       return (2 * t3 - 3 * t2 + 1) * y0 + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * y1 + (t3 - t2) * h * m1;
     };
-    SEQ.tl = gsap.timeline({ scrollTrigger: { trigger: '#pour', start: 'top top', end: '+=400%', pin: true, scrub: 0.8, onEnter: seqLoad } });
+    // Налив догоняет прокрутку сам (Томер 28.10, DEFECTS №29): прокрутка свободная; таймлайн идёт к положению прокрутки
+    // со сглаживанием (как прежний scrub 0.8), но не быстрее своего темпа — в наклоне с наливом 0.12 секции/с (≥ 4 с
+    // на весь налив), вне его 0.45. Смахнули сильно — секция держится на краю, пока налив не доиграет (короткая пауза
+    // на краю, без вязкости под пальцем). Регулятор скорости прокрутки (v39) отклонён: «смотрится так себе»
+    SEQ.tl = gsap.timeline({ paused: true });
+    const CH = { target: 0, p: 0, t: 0, init: false };
+    SEQ.tl.scrollTrigger = ScrollTrigger.create({ trigger: '#pour', start: 'top top', end: '+=400%', pin: true, onEnter: seqLoad,
+      onUpdate: s => { CH.target = s.progress; if (!CH.init) { CH.init = true; CH.p = s.progress; } } });
+    window.__chase = CH;   // для tests/
+    gsap.ticker.add(() => {
+      const st = SEQ.tl.scrollTrigger; if (!st.enabled) return;   // tests/ (test_pour_physics) ведут таймлайн сами
+      const now = performance.now() / 1000, dt = Math.min(0.1, CH.t ? now - CH.t : 0); CH.t = now;
+      const back = CH.target < CH.p, band = CH.p > 0.26 && CH.p < 0.76;
+      const vmax = REDUCED ? 99 : band ? (back ? 0.3 : 0.12) : 0.45;
+      CH.p += Math.max(-vmax * dt, Math.min(vmax * dt, (CH.target - CH.p) * (1 - Math.exp(-dt / 0.28))));
+      if (Math.abs(CH.p - SEQ.tl.progress()) > 1e-6) SEQ.tl.progress(CH.p);
+      // держим секцию на краю, пока налив не доиграл (иначе стакан уезжал бы с недолитым кофе)
+      if (lenis && !REDUCED) {
+        if (scrollY > st.end - 1 && CH.p < 0.86) lenis.scrollTo(st.end - 1, { immediate: true });
+        else if (scrollY < st.start + 1 && CH.p > 0.06 && CH.target <= 0) lenis.scrollTo(st.start + 1, { immediate: true });
+      }
+    });
     // ПЕРВЫЙ ЭКРАН: пока читают заголовок, стакан медленно проворачивается на пол-оборота (Томер 24.10:
     // «не быстро, чтобы ко второй секции он сделал примерно наоборот»). Отдельная величина turn — её
     // не трогают ни появление, ни налив; налив сбрасывает её на вылете стакана.

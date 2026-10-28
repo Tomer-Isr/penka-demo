@@ -744,7 +744,7 @@ function makeBigCup(scene, pos) {
     const pm = new THREE.PMREMGenerator(R); const tx = pm.fromScene(sc, 0.01).texture; pm.dispose(); return tx;
   })();
   const SU = { uT: { value: 0 }, uLen: { value: 1 }, uGlow: { value: 0.55 } };
-  const coffeeMat = R && new THREE.MeshPhysicalMaterial({ color: 0x120804, roughness: 0.12, metalness: 0, ior: 1.33, specularIntensity: 1, clearcoat: 0, envMap: streamEnv, envMapIntensity: 0.85 });
+  const coffeeMat = R && new THREE.MeshPhysicalMaterial({ color: 0x170a04, roughness: 0.09, metalness: 0, ior: 1.33, specularIntensity: 1, clearcoat: 0, envMap: streamEnv, envMapIntensity: 1.9 });
   if (coffeeMat) coffeeMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, SU);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vSU;')
@@ -757,19 +757,21 @@ function makeBigCup(scene, pos) {
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {   // рябь вытянута вдоль потока (1:8) и бежит вниз; две фазы — без пульсации
           vec2 q = vec2(vSU.y * 6.0, vSU.x * uLen * 6.0);
-          float p1 = fract(uT * 2.2), p2 = fract(uT * 2.2 + 0.5);
+          float p1 = fract(uT * 4.5), p2 = fract(uT * 4.5 + 0.5);
           float h = nz(q + vec2(0.0, -p1 * 4.0)) * (1.0 - abs(1.0 - 2.0*p1)) + nz(q + vec2(3.7, -p2 * 4.0)) * (1.0 - abs(1.0 - 2.0*p2));
-          h *= 0.08;
+          h *= 0.07;
           vec3 dx = dFdx(-vViewPosition), dy = dFdy(-vViewPosition);
           vec3 r1 = cross(dy, normal), r2 = cross(normal, dx); float det = dot(dx, r1);
           normal = normalize(abs(det)*normal - sign(det)*(dFdx(h)*r1 + dFdy(h)*r2));
         }`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-        {   float ndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
-          float th = mix(0.15, 1.0, ndv);
-          vec3 Tr = exp(-vec3(2.2, 4.5, 9.0) * th);
-          totalEmissiveRadiance += Tr * vec3(1.0, 0.52, 0.22) * uGlow;
-          reflectedLight.indirectSpecular *= mix(0.35, 1.0, ndv);
+        {   // просвет — только на тонком краю силуэта (Бер–Ламберт по длине пути сквозь струю): толща кофе непрозрачна.
+          // Было свечение и в сердцевине (красное) и оранжевый ореол на всей струе — «как лава» (Томер 28.10, DEFECTS №35)
+          float ndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+          float th = mix(0.03, 2.5, ndv);
+          vec3 Tr = exp(-vec3(3.0, 5.5, 10.0) * th);
+          totalEmissiveRadiance += Tr * vec3(0.85, 0.45, 0.18) * uGlow;
+          reflectedLight.indirectSpecular *= mix(0.45, 1.0, ndv);
         }`);
   };
   if (cup && streamEnv) { const m = cup.coffeeIn.material; m.envMap = streamEnv; m.envMapIntensity = 0.85; m.color.setHex(0x120804); }
@@ -997,7 +999,7 @@ function makeBigCup(scene, pos) {
   }
   // радиус струи от потока: сечение ∝ потоку → радиус ∝ √потока (было 0.009 + 0.033·поток — и нулевой поток давал
   // заметную струю: в конце налива она оставалась толстой, когда кофе уже почти нет; DEFECTS №28)
-  const rOf = f => 0.042 * Math.sqrt(Math.max(0, f));
+  const rOf = f => 0.032 * Math.sqrt(Math.max(0, f));   // 0.042 — «колбаса», кофе жидкий (DEFECTS №35)
   // поток для толщины: скорость убывания × остаток; к концу (остаток → порог «вылито», 1.2 %) сходит в нитку плавно,
   // а не обрывается на пределе 0.01 (DEFECTS №34). Одна формула для струи у кромки и для истории по длине
   const flowOf = qn => { const end = Math.min(1, Math.max(0, (FLOW.V / VFILL - 0.012) / 0.025));
@@ -1090,7 +1092,7 @@ function makeBigCup(scene, pos) {
       RIMCLR.v = RIMCLR.v === null ? cl : Math.min(RIMCLR.v, cl);
     }
     const seg = SSEG, base = sc * rOf(flow);
-    SU.uGlow.value = 0.15 + 0.45 * flow;
+    SU.uGlow.value = 0.35 - 0.2 * Math.min(1, flow * 2);   // тонкая нитка просвечивает сильнее толстой струи
     // ось — по параметру u кривой (язык через бортик получает свои 14% сегментов, DEFECTS №31), длина — накопленная
     for (let i = 0; i <= seg; i++) { curve.getPoint(i / seg, SP[i]); SL[i] = i ? SL[i - 1] + SP[i].distanceTo(SP[i - 1]) : 0; }
     const totLen = SL[seg]; SU.uLen.value = totLen; SU.uT.value = time;
@@ -1116,7 +1118,7 @@ function makeBigCup(scene, pos) {
       if (ug > curve.a) k *= Math.min(3, rOf(flowAt(time - (ug - curve.a) / (1 - curve.a) * tEnd)) / rOf(flow));
       if (i === Math.round(seg * 0.2)) RIMCLR.kTop = k; else if (i === Math.round(seg * 0.6)) RIMCLR.kLow = k;
       if (bead > 0) { const rr = Math.max(0.012 * sc, base * k); k *= 1 + 0.16 * bead * Math.sin(2 * Math.PI * SL[i] / (14 * rr) - time * 3); }
-      const wide = 1 + 0.8 * fullness * Math.exp(-uu * 18);
+      const wide = 1 + 0.5 * fullness * Math.exp(-uu * 18);
       const flat = 1 - 0.45 * fullness * Math.exp(-uu * 16);
       for (let j = 0; j < cnt; j++) {
         const idx = i * cnt + j, v = j / SRAD * Math.PI * 2;

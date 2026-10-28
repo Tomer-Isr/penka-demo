@@ -662,6 +662,9 @@ function makeBigCup(scene, pos) {
       beans: () => beans.list.filter(b => b.m.visible).map(b => { const v = b.m.position.clone().project(cam), r = b.m.scale.x;
         const e = b.m.position.clone().add(new THREE.Vector3(r, r, 0)).project(cam);
         return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (0.5 - v.y * 0.5) * innerHeight, r: Math.abs(e.x - v.x) * 0.5 * innerWidth * 1.1 }; }),
+      // для tests/ (стенд плавности): виден ли стакан, центр на экране (px), поворот (кватернион)
+      cupPose: () => { const v = cup.group.getWorldPosition(new THREE.Vector3()).project(cam);
+        return [cup.group.visible && !SEQ.on ? 1 : 0, (v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight, ...cup.group.getWorldQuaternion(new THREE.Quaternion()).toArray()]; },
       cupY: () => { const v = cup.group.getWorldPosition(new THREE.Vector3()).project(cam); return (0.5 - v.y * 0.5) * innerHeight; },
       cupBox: () => { const b = new THREE.Box3().setFromObject(cup.group), r = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
         for (let i = 0; i < 8; i++) { const v = new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(cam);
@@ -884,6 +887,10 @@ function makeBigCup(scene, pos) {
       FLOW.V = Math.min(FLOW.V, cap + EX_MAX);
       FLOW.rate = dt > 0 ? (V0 - FLOW.V) / dt : 0;
       if (FLOW.V < 0.0015 && cap < 0.01) { FLOW.V = 0; FLOW.rate = 0; }
+      // вязкий хвост (экспонента) к нулю не приходит: последние ~2 % в стакане уже не видны, а нитка тянулась ещё 3–4 с
+      // до 0.2 % (Томер 28.10: «в стакане пусто, а оно течёт», DEFECTS №33). Остаток < 1.2 % у горизонтали — вылит:
+      // лужица и струя кончаются вместе
+      else if (cap < 0.07 && FLOW.V < 0.012 * VFILL && FLOW.V < V0) { FLOW.V = 0; }
     }
     const was = FLOW.pouring;
     FLOW.q = Math.min(1, FLOW.rate / RATE_REF);
@@ -973,7 +980,7 @@ function makeBigCup(scene, pos) {
     getPointAt(u, out) { return this.getPoint(u, out); }
     getTangentAt(u, out) { return this.getTangent(u, out); }
   }
-  const RIMCLR = { v: null };
+  const RIMCLR = { v: null }, LASTF = { v: 0.08 };   // LASTF — толщина струи в последний миг налива: с ней падает хвост
   // для tests/: зазор НАСТОЯЩЕЙ сетки струи над трубкой бортика (по вершинам, в осях стакана). RIMCLR.v меряет кривую,
   // а сетку строил TubeGeometry по длине дуги — язык через бортик ложился на 2–3 хорды и резал бортик (DEFECTS №31)
   function meshClear() {
@@ -1040,7 +1047,7 @@ function makeBigCup(scene, pos) {
     // толщина струи — из скорости, с которой убывает объём; дуга через бортик — только пока кофе много
     const fullness = Math.min(1, FLOW.V * 2.2);
     // толщина: скорость убывания × остаток — когда кофе почти нет, струя сходит на нитку, а не обрывается толстой
-    const flow = tailT >= 0 ? 0.08 : Math.max(0.01, Math.sqrt(Math.min(1, qn)) * Math.min(1, Math.pow(FLOW.V / 0.14, 0.7)));
+    const flow = tailT >= 0 ? LASTF.v : Math.max(0.01, Math.sqrt(Math.min(1, qn)) * Math.min(1, Math.pow(FLOW.V / 0.14, 0.7)));
     // язык — дуга вокруг трубки бортика на расстоянии своей толщины: изнутри → через верх (по мировой вертикали) →
     // наружу. Раньше — парабола от точки кромки: при малом остатке её середина уходила ниже верха бортика, и даже
     // через три точки на окружности парабола срезает углы — струя проходила сквозь бортик, а он оставался чистым
@@ -1118,7 +1125,7 @@ function makeBigCup(scene, pos) {
     // для tests/: низ струи — конец траектории (при распаде её продолжают капли до низа экрана)
     curve.tEnd = tEnd; streamEnd.copy(curve.getPoint(1)); curve.tEnd = tb;
     RIMCLR.solid = (0.5 - curve.getPoint(1).project(cam).y * 0.5) * innerHeight - (0.5 - P1.clone().project(cam).y * 0.5) * innerHeight;   // для tests/: длина сплошной части, px
-    RIMCLR.q = flow;
+    RIMCLR.q = flow; if (tailT < 0) LASTF.v = flow;
     RIMCLR.side = cup.inner.worldToLocal(P1.clone()).y - cup.inner.worldToLocal(Q.clone()).y;   // для tests/, №31
     if (tb < tEnd) {
       // капли распада: k-я отрывается в момент k/ν, летит по той же траектории от точки схода; видны с tb до tEnd
@@ -1339,6 +1346,16 @@ function makeBigCup(scene, pos) {
     R.render(scene, cam);
   }
   if (R) gsap.ticker.add(() => frame(performance.now()));
+  // прогрев шейдеров при загрузке: материал, впервые попавший в кадр, компилируется посреди анимации — замирание
+  // 150–240 мс в момент, когда появляется кофе (профиль 28.10: 90 % — getProgramInfoLog). Всё временно видимо →
+  // compileAsync (компиляция в фоне, где есть KHR_parallel_shader_compile) → видимость как была
+  if (R) requestAnimationFrame(() => {
+    const hidden = [];
+    for (const sc of [scene, liqScene]) sc.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    const done = [R.compileAsync(scene, cam), R.compileAsync(liqScene, liqCam)];
+    hidden.forEach(o => o.visible = false);
+    Promise.all(done).then(() => { window.__warm = true; }, () => {});
+  });
 
   // ── текст: заголовки поднимаются по словам из маски ──
   const splits = [];
@@ -1467,12 +1484,28 @@ function makeBigCup(scene, pos) {
     gsap.ticker.add(() => {
       const st = SEQ.tl.scrollTrigger; if (!st.enabled) return;   // tests/ (test_pour_physics) ведут таймлайн сами
       const now = performance.now() / 1000, dt = Math.min(0.1, CH.t ? now - CH.t : 0); CH.t = now;
-      // назад — без темпа: далеко отмотали (> 0.15) — сразу на место, близко — сглаживание. Медленная перемотка назад
-      // и удержание у начала спорили с пальцем: фон мерцал и был полупрозрачным при быстрых свайпах вверх (Томер 28.10)
-      const back = CH.target < CH.p, band = CH.p > 0.26 && CH.p < 0.76;
-      if (back && CH.p - CH.target > 0.15) CH.p = CH.target;
-      const vmax = REDUCED || back ? 99 : band ? 0.12 : 0.45;
-      CH.p += Math.max(-vmax * dt, Math.min(vmax * dt, (CH.target - CH.p) * (1 - Math.exp(-dt / 0.28))));
+      // назад — быстро, но непрерывно: до 1 секции/с (≤ 0.017 за кадр), пружина жёстче — откат с меню к началу за
+      // ~0.9 с (3/с и 1.5/с крутили стакан на первом экране по 45° и 27° за кадр), заливка уходит в первые миллисекунды. v41 ставил
+      // сразу на место (> 0.15 — прыжок): стакан перескакивал
+      // за кадр на 165° и на треть экрана — рывок (стенд плавности 28.10, DEFECTS №32). Медленная перемотка назад (v40)
+      // и удержание у начала спорили с пальцем: фон мерцал (Томер 28.10) — удержания назад по-прежнему нет
+      // Ход — пружина с критическим затуханием (точное решение за шаг, устойчиво при любом dt), а не «скорость ∝
+      // отставанию»: там каждый рывок пальца мгновенно менял скорость налива — шаг за кадр 0.003 → 0.007 → 0.012 → 0.005,
+      // стакан дёргался при свайпах (стенд плавности 28.10, DEFECTS №32). Скорость ограничена темпом (в наливе 0.12,
+      // вне 0.45 — переход между ними плавный, раньше обрезался за кадр), разгон — 1.2 секции/с², торможение быстрее;
+      // цель не перелетаем
+      const back = CH.target < CH.p, sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const band = sm(0.22, 0.28, CH.p) * (1 - sm(0.74, 0.8, CH.p));
+      if (REDUCED) { CH.p = CH.target; CH.v = 0; }
+      else if (dt > 0) {
+        const w = back ? 18 : 6, x0 = CH.p - CH.target, v0 = CH.v || 0, e = Math.exp(-w * dt), c = v0 + w * x0;
+        let v = (v0 - w * c * dt) * e;
+        v = Math.max(-1, Math.min(0.45 - 0.33 * band, v));
+        const amax = (Math.abs(v) < Math.abs(v0) && v * v0 >= 0 ? 4 : 1.2) * (back ? 10 : 1);
+        v = v0 + Math.max(-amax * dt, Math.min(amax * dt, v - v0));
+        const p = CH.p + (v0 + v) / 2 * dt;
+        if ((CH.target - CH.p) * (CH.target - p) < 0) { CH.p = CH.target; CH.v = 0; } else { CH.p = p; CH.v = v; }
+      }
       if (Math.abs(CH.p - SEQ.tl.progress()) > 1e-6) SEQ.tl.progress(CH.p);
       // держим секцию на краю, пока налив не доиграл (иначе стакан уезжал бы с недолитым кофе)
       // при автопрокрутке («Налить») край не держим силой — она сама дожидается налива (иначе сбивалась и вставала)

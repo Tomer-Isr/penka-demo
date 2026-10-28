@@ -1398,15 +1398,15 @@ function makeBigCup(scene, pos) {
     gsap.ticker.add(() => {
       const st = SEQ.tl.scrollTrigger; if (!st.enabled) return;   // tests/ (test_pour_physics) ведут таймлайн сами
       const now = performance.now() / 1000, dt = Math.min(0.1, CH.t ? now - CH.t : 0); CH.t = now;
+      // назад — без темпа: далеко отмотали (> 0.15) — сразу на место, близко — сглаживание. Медленная перемотка назад
+      // и удержание у начала спорили с пальцем: фон мерцал и был полупрозрачным при быстрых свайпах вверх (Томер 28.10)
       const back = CH.target < CH.p, band = CH.p > 0.26 && CH.p < 0.76;
-      const vmax = REDUCED ? 99 : band ? (back ? 0.3 : 0.12) : 0.45;
+      if (back && CH.p - CH.target > 0.15) CH.p = CH.target;
+      const vmax = REDUCED || back ? 99 : band ? 0.12 : 0.45;
       CH.p += Math.max(-vmax * dt, Math.min(vmax * dt, (CH.target - CH.p) * (1 - Math.exp(-dt / 0.28))));
       if (Math.abs(CH.p - SEQ.tl.progress()) > 1e-6) SEQ.tl.progress(CH.p);
       // держим секцию на краю, пока налив не доиграл (иначе стакан уезжал бы с недолитым кофе)
-      if (lenis && !REDUCED) {
-        if (scrollY > st.end - 1 && CH.p < 0.86) lenis.scrollTo(st.end - 1, { immediate: true });
-        else if (scrollY < st.start + 1 && CH.p > 0.06 && CH.target <= 0) lenis.scrollTo(st.start + 1, { immediate: true });
-      }
+      if (lenis && !REDUCED && !back && scrollY > st.end - 1 && CH.p < 0.86) lenis.scrollTo(st.end - 1, { immediate: true });
     });
     // ПЕРВЫЙ ЭКРАН: пока читают заголовок, стакан медленно проворачивается на пол-оборота (Томер 24.10:
     // «не быстро, чтобы ко второй секции он сделал примерно наоборот»). Отдельная величина turn — её

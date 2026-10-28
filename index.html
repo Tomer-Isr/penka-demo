@@ -1399,10 +1399,12 @@ function makeBigCup(scene, pos) {
   // концы — гладкие языки (одни сужаются, другие чуть набухают каплей), вдоль языка — глянцевый блик.
   // Стекают одним вязким движением через весь переход меню → молоко (DR.p): быстрее в начале, всё медленнее к
   // концу, без второго разгона (Томер 25.10: два этапа давали рывок — «утолщилась слишком резко»). Назад не
-  // втягиваются: DR.p — максимум достигнутого (стекло — осталось). Без движения по времени: стоит прокрутка —
-  // стоят потёки («подёргиваются»). Коротких бугорков нет — только средние и длинные языки.
+  // втягиваются: DR.p — максимум достигнутого (стекло — осталось). Коротких бугорков нет — только средние и длинные.
+  // Стекают сами по времени, как только край молока показался (~9 с, всё медленнее, потом стоят); прокрутка вниз
+  // подгоняет. Было только от прокрутки — палец остановился, потёки встали (Томер 28.10, DEFECTS №38). «Дыхания»
+  // по sin(time) нет (№21) — время только толкает вперёд, по одной кривой
   const dripSvg = document.querySelector('.milk .drips'), dripEl = document.getElementById('drips'), glossEl = document.getElementById('dripsGloss');
-  const DR = { p: REDUCED ? 1 : 0, s: 0, list: [], W: 0, H: 0, key: '' };
+  const DR = { p: REDUCED ? 1 : 0, s: 0, t0: 0, T: 9, list: [], W: 0, H: 0, key: '' };
   const rnd = i => { const v = Math.sin(i * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
   function layoutDrips() {
     const W = dripSvg.clientWidth, H = dripSvg.clientHeight; if (!W || !H || (W === DR.W && H === DR.H)) return;
@@ -1455,8 +1457,9 @@ function makeBigCup(scene, pos) {
     return [d + arch(ex, es, 0, 0) + ` L0 -1 Z`, g];
   }
   layoutDrips(); new ResizeObserver(layoutDrips).observe(dripSvg);
-  gsap.ticker.add(() => {                                   // перерисовка только когда сдвинулась прокрутка
-    DR.p = Math.max(DR.p, DR.s);                            // назад не втягиваются
+  gsap.ticker.add(() => {                                   // перерисовка только когда подтёки сдвинулись
+    const tp = DR.t0 ? Math.min(1, (performance.now() / 1000 - DR.t0) / DR.T) : 0;
+    DR.p = Math.max(DR.p, DR.s, tp);                        // назад не втягиваются
     const key = DR.W + ':' + DR.H + ':' + DR.p.toFixed(4);
     if (!DR.W || key === DR.key) return; DR.key = key;
     const [d, g] = dripPath(); dripEl.setAttribute('d', d); glossEl.setAttribute('d', g);
@@ -1690,7 +1693,8 @@ function makeBigCup(scene, pos) {
       .to('.hero .copy', { opacity: 0, y: -36, ease: 'none', duration: 0.25 }, 0.75);
     // потёки дорастают, пока край меню уходит вверх
     // и вязко дотекают, пока молоко проходит экран (scrub 2 — плавно догоняют прокрутку; DR.p берёт максимум)
-    gsap.to(DR, { s: 1, ease: 'none', scrollTrigger: { trigger: '.milk', start: 'top bottom', end: 'bottom 30%', scrub: 2 } });
+    gsap.to(DR, { s: 1, ease: 'none', scrollTrigger: { trigger: '.milk', start: 'top bottom', end: 'bottom 30%', scrub: 2,
+      onEnter: () => { if (!DR.t0) DR.t0 = performance.now() / 1000; } } });   // показались — дальше текут сами
     // от молока до подвала — одна плавная кривая (Catmull-Rom) по скроллу: стакан скользит по диагонали
     // справа, проходит за картой гостя и садится в подвале; без уходов за край и возвратов
     const path = new THREE.CatmullRomCurve3([[1.1, -0.32], [1.7, 0.55], [1.5, 0.3], [1.3, 0.05], [1.55, 0.12]].map(([x, y]) => new THREE.Vector3(x, y, 0)), false, 'centripetal');

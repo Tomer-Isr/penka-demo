@@ -1560,6 +1560,9 @@ function makeBigCup(scene, pos) {
       // налива доливается до конца
       .to(S, { fillEnd: 1, duration: 0.24, ease: 'power1.inOut' }, 0.6)
       .to(S, { y: 2.6, duration: 0.14, ease: 'power2.in' }, 0.75)
+      // вылив, рука не держит стакан вверх дном: поднимая, доворачивает его к вертикали (Томер 28.10, #8633). Остаток
+      // кофе к этому времени вылит; если нет (быстрый смах) — выпрямленный стакан сам перестаёт лить, как в жизни
+      .to(TILT, { u: 0, duration: 0.11, ease: 'sine.inOut', onUpdate: () => { S.tilt = tiltCurve(TILT.u); } }, 0.77)
       .to('#flood', { opacity: 1, duration: 0.02 }, 0.87)
       .to(S, { liquidOff: true, duration: 0.01 }, 0.89)
       .to(S, { hide: 1, duration: 0.01 }, 0.89)

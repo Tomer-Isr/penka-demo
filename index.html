@@ -100,7 +100,7 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 .menu .wrap{position:relative;z-index:1}
 .splat i+i{transform:scale(0);animation:splat-in .25s cubic-bezier(.3,1.7,.5,1) forwards}
 @keyframes splat-in{to{transform:scale(1)}}
-.splat{position:absolute;width:var(--s);height:var(--s);transition:transform var(--d,0s) cubic-bezier(.5,0,.8,.6) .5s}
+.splat{filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));position:absolute;width:var(--s);height:var(--s);transition:transform var(--d,0s) cubic-bezier(.5,0,.8,.6) .5s}
 .splat i{display:block;width:100%;height:100%;opacity:.92;border-radius:50% 50% 48% 52%/55% 55% 45% 45%;
   background:radial-gradient(circle at 34% 30%,rgba(255,255,255,var(--h,.6)) 0 11%,transparent 14%),radial-gradient(circle at 50% 58%,var(--c) 0 58%,var(--e) 100%);box-shadow:0 1px 1.5px rgba(0,0,0,.28)}
 .splat i+i{animation-delay:.36s}
@@ -112,11 +112,16 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:24px;padding:7vh 0;opacity:.35;transition:opacity .4s}
 .item+.item{border-top:1px solid rgba(239,230,220,.14)}
 .item.on{opacity:1}
-/* выбор напитка: остановился — под ним заполняется полоска (~1.6 с), дошла — наливаем; пролистал раньше — не наливаем */
 .item{position:relative}
-.item::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--foam);transform:scaleX(0);transform-origin:left;opacity:0;pointer-events:none}
-.item.arm::after{opacity:.85;transform:scaleX(1);transition:transform 1.6s linear,opacity .2s}
-.item.poured::after{opacity:0;transform:scaleX(1);transition:opacity .8s}
+.count{display:none}
+/* выбор — действием (Томер 29.10: «пользователь должен что-то нажать, и что-то должно произойти»): налив — только по
+   кнопке активного напитка (или тапу по стакану); листание меняет напиток, но не наливает */
+.pour-it{grid-column:1/-1;justify-self:start;margin-top:4px;font:600 15px/1 var(--body,inherit);color:var(--coffee);background:var(--foam);border:0;border-radius:999px;padding:12px 20px;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s,transform .2s}
+.item.on .pour-it{opacity:1;pointer-events:auto}
+.pour-it:active{transform:scale(.96)}
+.pour-it:focus-visible{outline:2px solid var(--foam);outline-offset:3px}
+.pour-it[disabled]{opacity:.55;cursor:default}
+.item.on .pour-it[disabled]{opacity:.55}
 .menu{cursor:default}
 .item h3{font-size:clamp(34px,4.2vw,62px)}
 .item .price{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -195,6 +200,17 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
   .item{padding:3.2svh 0;gap:16px}
   .item h3{font-size:clamp(28px,8vw,36px)}
   .item p{font-size:15px}
+  /* одна карточка напитка (Томер 29.10: «на телефоне — один вид кофе, свайп — следующий»): соседей не видно,
+     активный въезжает; полоски ожидания нет — свайп и есть выбор; внизу счётчик и подсказка на первом */
+  .item{opacity:0;transform:translateY(18px);transition:opacity .45s,transform .55s cubic-bezier(.2,.8,.3,1)}
+  .item.on{opacity:1;transform:none}
+  .item+.item{border-top:0}
+  .count{display:flex;align-items:baseline;gap:10px;padding:0 0 calc(18px + env(safe-area-inset-bottom,0px));font-size:13px;color:rgba(239,230,220,.6);font-variant-numeric:tabular-nums}
+  .count b{color:var(--foam);font-size:15px}
+  .count .hint{margin-left:auto;letter-spacing:.04em;transition:opacity .4s}
+  .count .hint::after{content:" ↑";display:inline-block;animation:nudge 1.6s ease-in-out infinite}
+  .count.later .hint{opacity:0}
+  @keyframes nudge{50%{transform:translateY(-4px)}}
   .stamps{height:auto;padding-block:14vh}
   .visit .cols{grid-template-columns:1fr}
   .pour .before{padding-top:62vh}
@@ -236,16 +252,17 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
         <p class="lead">Цены за стакан 350 мл. Любое молоко без доплаты.</p>
         <div class="stage" aria-hidden="true"></div>
         <div class="drum"><div class="list" id="list">
-          <div class="item" data-sleeve="#7a2e1d" data-label="espresso"><h3>Эспрессо</h3><span class="price">9 ₪</span><p>Двойной, как и всё у нас. Плотная крема, сахар по желанию.</p></div>
-          <div class="item" data-sleeve="#c08a5a" data-label="macchiato"><h3>Макиато</h3><span class="price">11 ₪</span><p>Эспрессо и шапка молочной пены сверху. Пьётся в три глотка.</p></div>
-          <div class="item" data-sleeve="#d9832b" data-label="americano"><h3>Американо</h3><span class="price">12 ₪</span><p>Двойной эспрессо, долитый горячей водой. Крема остаётся сверху.</p></div>
-          <div class="item" data-sleeve="#e2574c" data-label="hafuch"><h3>Хафух</h3><span class="price">15 ₪</span><p>Израильская классика: сначала молоко с пеной, сверху эспрессо.</p></div>
-          <div class="item" data-sleeve="#2f4cf0" data-label="cappuccino"><h3>Капучино</h3><span class="price">14 ₪</span><p>Плотная пенка, два шота, корица по желанию.</p></div>
-          <div class="item" data-sleeve="#e9b9c8" data-label="flat white"><h3>Флэт уайт</h3><span class="price">15 ₪</span><p>Меньше молока, больше вкуса. Для тех, кто знает.</p></div>
-          <div class="item" data-sleeve="#7da84a" data-label="matcha latte"><h3>Матча-латте</h3><span class="price">18 ₪</span><p>Церемониальная матча и холодное овсяное.</p></div>
-          <div class="item" data-sleeve="#5aa9d6" data-label="ice coffee"><h3>Айс-кафе</h3><span class="price">17 ₪</span><p>Израильский холодный: кофе, молоко и лёд, взбитые в густую шугу.</p></div>
-          <div class="item" data-sleeve="#1c1d22" data-label="cold brew"><h3>Колд брю</h3><span class="price">16 ₪</span><p>Настаиваем шестнадцать часов. Лёд кладём по запросу.</p></div>
+          <div class="item" data-sleeve="#e2574c" data-label="hafuch"><h3>Хафух</h3><span class="price">15 ₪</span><p>Израильская классика: сначала молоко с пеной, сверху эспрессо.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#2f4cf0" data-label="cappuccino"><h3>Капучино</h3><span class="price">14 ₪</span><p>Плотная пенка, два шота, корица по желанию.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#c08a5a" data-label="latte"><h3>Латте</h3><span class="price">15 ₪</span><p>Много молока, тонкая пена, сердечко сверху.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#e9b9c8" data-label="flat white"><h3>Флэт уайт</h3><span class="price">15 ₪</span><p>Меньше молока, больше вкуса. Для тех, кто знает.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#7a2e1d" data-label="mocha"><h3>Мокко</h3><span class="price">17 ₪</span><p>На дне — горький шоколад, сверху эспрессо и молоко.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#d9832b" data-label="americano"><h3>Американо</h3><span class="price">12 ₪</span><p>Двойной эспрессо, долитый горячей водой. Крема остаётся сверху.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#7da84a" data-label="matcha latte"><h3>Матча-латте</h3><span class="price">18 ₪</span><p>Церемониальная матча и холодное овсяное.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#5aa9d6" data-label="ice coffee"><h3>Айс-кафе</h3><span class="price">17 ₪</span><p>Израильский холодный: кофе, молоко и лёд, взбитые в густую шугу.</p><button class="pour-it" type="button">Налить</button></div>
+          <div class="item" data-sleeve="#1c1d22" data-label="cold brew"><h3>Колд брю</h3><span class="price">16 ₪</span><p>Настаиваем шестнадцать часов. Лёд кладём по запросу.</p><button class="pour-it" type="button">Налить</button></div>
         </div></div>
+        <div class="count" aria-hidden="true"><b id="cnum">01</b><span id="ctot">/ 09</span><span class="hint">листай — другие</span></div>
       </div>
       <div aria-hidden="true"></div>
     </div>
@@ -706,7 +723,8 @@ function makeBigCup(scene, pos) {
     // во время налива камера поднимается — смотрим на стакан чуть сверху и видим поверхность кофе внутри
     // налив в меню: камера поднимается, чтобы смотреть в стакан сверху (иначе она ниже поверхности напитка и видна
     // только задняя стенка над ним)
-    const cu = S.camUp, mv = window.__menuFill ? __menuFill.view : 0;
+    // компьютер: камеру не двигаем (стакан рос и съезжал) — там стакан сильнее наклоняется к зрителю (frame)
+    const cu = S.camUp, mv = window.__menuFill && MOBILE() ? __menuFill.view : 0;
     cam.position.set(0, 0.55 + 0.9 * cu + 3.0 * mv, 6.2); cam.lookAt(0, 0.45 + 0.2 * cu + 0.4 * mv, 0);
     cam.fov = MOBILE() ? 30 : 24; cam.updateProjectionMatrix();
   }
@@ -1362,16 +1380,18 @@ function makeBigCup(scene, pos) {
     oat: { c: [0.9, 0.85, 0.76], hex: 0xece2d0 },
     matcha: { c: [0.28, 0.5, 0.09], hex: 0x6f9a2c, top: 3 },
     slush: { c: [0.62, 0.46, 0.32], hex: 0xa07a58, thick: 1.8 },                // айс-кафе: густая шуга
+    choc: { c: [0.13, 0.055, 0.025], rim: [0.2, 0.09, 0.04], coffee: true, thick: 1.3 },   // мокко: горький шоколад на дне
   };
-  // меню как в израильской кофейне (29.10): без молока — эспрессо, американо, колд брю; с молоком — остальное.
-  // Хафух — молоко с пеной, эспрессо сверху (поэтому «перевёрнутый»)
+  // меню как в израильской кофейне, только то, что наливают в стакан 350 мл (29.10: эспрессо и макиато честно
+  // занимали донышко — «первый стакан не наполняется»). Без молока — американо, колд брю; хафух — молоко с пеной,
+  // эспрессо сверху (поэтому «перевёрнутый»); мокко — шоколад на дне
   const RECIPES = {
-    espresso: [['shot', 0.22]],
-    macchiato: [['shot', 0.22], ['foam', 0.34]],
-    americano: [['shot', 0.2], ['water', 0.84]],
     hafuch: [['milk', 0.5], ['foam', 0.66], ['shot', 0.84]],
     cappuccino: [['shot', 0.24], ['milk', 0.66], ['foam', 0.86]],
+    latte: [['shot', 0.22], ['milk', 0.88]],
     'flat white': [['shot', 0.26], ['milk', 0.82]],
+    mocha: [['choc', 0.12], ['shot', 0.32], ['milk', 0.72], ['foam', 0.86]],
+    americano: [['shot', 0.2], ['water', 0.84]],
     'matcha latte': [['oat', 0.5], ['matcha', 0.84]],
     'ice coffee': [['slush', 0.86]],
     'cold brew': [['coldbrew', 0.84]],
@@ -1379,12 +1399,12 @@ function makeBigCup(scene, pos) {
   const MF = { lid: 0, view: 0, V: 0, Va: 0, vols: {}, kind: null, t0: 0, end: -1, tl: null, label: null };
   window.__menuFill = MF;   // для tests/
   const MRATE = 0.24, MFALL = 0.45;                         // объём в секунду (стакан ~3 с); струя долетает за ~0.45 с
-  // Выбор напитка (Томер 29.10: «не успеваю выбрать, а он уже всё наливает»): листаешь — стакан закрыт, меняет только
-  // рукав (оборот); остановился на напитке — под ним заполняется полоска (MARM с), дошла — крышку снимают и наливают
-  // именно его; тап по меню — наливает сразу. Пролистал раньше — не наливается
-  const MARM = 1.6, MSPIN = 1.3;
+  // Выбор напитка — действием (Томер 29.10: «зачем наливать, если пользователь ничего не выбрал… пользователь должен
+  // что-то нажать»): листание меняет напиток — стакан закрыт, оборот, новый рукав; налив — по кнопке «Налить» на
+  // карточке или тапу по стакану. Автоналива нет (ни сразу, ни по остановке — это было в v50–v52)
+  const MSPIN = 1.3;
   function menuPrep(label) {
-    if (MF.tl) MF.tl.kill(); if (MF.arm) MF.arm.kill();
+    if (MF.tl) MF.tl.kill();
     MF.label = label || null; MF.poured = false; MF.turnAt = performance.now() / 1000;
     const tl = MF.tl = gsap.timeline();
     if (REDUCED) { MF.kind = null; MF.end = -1; MF.vols = {}; MF.V = MF.Va = 0; MF.lid = MF.view = 0; return; }
@@ -1392,13 +1412,13 @@ function makeBigCup(scene, pos) {
       tl.to(MF, { lid: 0, view: 0, duration: 0.3, ease: 'power2.in' }, 0);
       tl.call(() => { MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.end = -1; }, null, 0.6);   // середина оборота — новый стакан
     }
-    if (label && RECIPES[label]) { MF.arm = gsap.delayedCall(MARM, () => menuFill(label)); window.dispatchEvent(new CustomEvent('menuarm')); }
+    window.dispatchEvent(new CustomEvent('menuprep'));
   }
   function menuFill(label) {
     if (!label || MF.label !== label || MF.poured || !RECIPES[label]) return;
     if (MF.arm) MF.arm.kill(); MF.poured = true;
     window.dispatchEvent(new CustomEvent('menupour', { detail: label }));
-    const rec = RECIPES[label];
+    const rec = RECIPES[label]; MF.final = rec[rec.length - 1][1];
     if (REDUCED) { let prev = 0; MF.vols = {}; for (const [k, to] of rec) { MF.vols[k] = to - prev; prev = to; } MF.V = MF.Va = prev; MF.lid = MF.view = 1; return; }
     if (MF.tl) MF.tl.kill();
     const tl = MF.tl = gsap.timeline({ delay: Math.max(0, MF.turnAt + MSPIN - performance.now() / 1000) });   // оборот докрутится
@@ -1416,15 +1436,16 @@ function makeBigCup(scene, pos) {
       if (last) { tl.call(() => { MF.end = performance.now() / 1000; }, null, at + dur); t = at + dur + 0.45; } else t = at + dur;   // хвост успевает упасть
       prev = to;
     });
+    tl.call(() => window.dispatchEvent(new CustomEvent('menudone')), null, t);
   }
   window.__menuFillNow = () => menuFill(MF.label);   // для tests/
   // брызги «на стекле» экрана: капля вылетает из стакана (видно, откуда взялась) и прилипает к краю — только когда
   // стакан почти полон и струя бьёт у самой кромки (раньше летели с первой секунды, когда кофе бил в дно — Томер
   // 29.10: «непонятно, от чего появляются»). Слой фиксирован: держатся при любой прокрутке, как потёки; стираются
   // обновлением страницы или возвратом в самый верх. Некоторые медленно сползают; до 60 штук
-  const splatBox = document.querySelector('.splats'), SPL = [];
+  const splatBox = document.querySelector('.splats'), SPL = []; let SPLAT_ID = 0;
   const SPLAT_C = { shot: ['#5a3218', '#25120a', .55], coffee: ['#3a1d0e', '#160a04', .55], coldbrew: ['#2a150b', '#100703', .5], water: ['rgba(255,250,240,.16)', 'rgba(255,250,240,.42)', .8],
-    milk: ['#f3eee6', '#cfc6b8', .7], foam: ['#f8f5ef', '#d8d0c3', .7], oat: ['#ece2d0', '#c7b9a0', .7], matcha: ['#7fa63a', '#46651a', .55], slush: ['#a8805c', '#6a4b31', .55] };
+    milk: ['#f3eee6', '#cfc6b8', .7], choc: ['#3b1a0c', '#170904', .5], foam: ['#f8f5ef', '#d8d0c3', .7], oat: ['#ece2d0', '#c7b9a0', .7], matcha: ['#7fa63a', '#46651a', .55], slush: ['#a8805c', '#6a4b31', .55] };
   function splat(kind, big, ox, oy) {
     if (!splatBox || REDUCED) return;
     const side = ox > innerWidth / 2 ? Math.random() < 0.7 : Math.random() < 0.3, W = innerWidth, H = innerHeight;
@@ -1439,7 +1460,17 @@ function makeBigCup(scene, pos) {
       const d = s * (0.8 + Math.random() * 1.4), a = dir + (Math.random() - 0.5) * 1.1, ss = 1 + Math.random() * Math.min(3, s * 0.25);
       sat += `<i style="position:absolute;left:${(s / 2 + Math.cos(a) * d - ss / 2).toFixed(1)}px;top:${(s / 2 + Math.sin(a) * d - ss / 2).toFixed(1)}px;width:${ss.toFixed(1)}px;height:${ss.toFixed(1)}px"></i>`;
     }
-    el.innerHTML = `<i style="border-radius:${q()} ${q()} ${q()} ${q()}/${q()} ${q()} ${q()} ${q()}"></i>` + sat; splatBox.appendChild(el); SPL.push(el);
+    // капля — SVG: плавный неровный силуэт (9 точек, сглажены через середины), тело — градиент (кофе полупрозрачный,
+    // молоко плотное), тёмный ободок по краю (так высыхает капля кофе), резкий блик сверху-слева и отсвет снизу
+    const N = 9, P = [...Array(N)].map((_, k) => { const a = k / N * Math.PI * 2, r = 1 + (Math.random() - 0.5) * 0.3; return [Math.cos(a) * r, Math.sin(a) * r * 0.92]; });
+    const mid = k => { const [a, b] = [P[k % N], P[(k + 1) % N]]; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+    let d = `M${mid(0).map(v => v.toFixed(3)).join(' ')}`;
+    for (let k = 1; k <= N; k++) d += `Q${P[k % N].map(v => v.toFixed(3)).join(' ')} ${mid(k).map(v => v.toFixed(3)).join(' ')}`;
+    const id = 'sg' + (++SPLAT_ID), milky = hl >= 0.7 && !String(c).startsWith('rgba');
+    const body = `<defs><radialGradient id="${id}" cx=".42" cy=".38" r=".75"><stop offset="0" stop-color="${c}" stop-opacity="${milky ? 1 : .55}"/><stop offset=".72" stop-color="${c}" stop-opacity="${milky ? 1 : .8}"/><stop offset="1" stop-color="${e}"/></radialGradient></defs>`
+      + `<path d="${d}" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${e}" stroke-width=".09" opacity="${milky ? .5 : .9}"/>`
+      + `<ellipse cx="-.32" cy="-.38" rx=".26" ry=".13" transform="rotate(-28 -.32 -.38)" fill="#fff" opacity="${hl}"/><ellipse cx=".3" cy=".42" rx=".16" ry=".06" fill="#fff" opacity="${(hl * 0.35).toFixed(2)}"/>`;
+    el.innerHTML = `<svg viewBox="-1.1 -1.1 2.2 2.2" width="${s.toFixed(1)}" height="${s.toFixed(1)}" style="display:block;overflow:visible">${body}</svg>` + sat; splatBox.appendChild(el); SPL.push(el);
     // полёт из стакана по дуге и шлепок о стекло (сплющилась и выпрямилась)
     const dx = ox - x, dy = oy - y;
     el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(.25)` }, { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 60}px) scale(.55)`, offset: 0.5 },
@@ -1511,7 +1542,7 @@ function makeBigCup(scene, pos) {
       if (d.position.y < mT.y) d.visible = false;
     });
     // брызги на стекло — только когда струя бьёт у самой кромки (поверхность ближе 0.25 высоты до неё)
-    if (hit && surface.visible && h > hLipAt(FLOW.alpha) - 0.25 && time - (MF.lastSplat || 0) > 0.45 && Math.random() < 0.7) {
+    if (hit && surface.visible && h > hLipAt(FLOW.alpha) - 0.25 && MF.V > 0.7 * (MF.final || 1) && time - (MF.lastSplat || 0) > 0.45 && Math.random() < 0.7) {
       const v = mT.clone().project(cam); splat(MF.kind, Math.random() < 0.2, (v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight); MF.lastSplat = time;
     }
   }
@@ -1538,8 +1569,9 @@ function makeBigCup(scene, pos) {
     // въезжает снизу, стакан с ним; уезжает вверх — стакан тоже. Только после налива (Томер 26.10)
     const stR = m && prog > 0.9 ? stageEl.getBoundingClientRect() : null;
     const onStage = !!stR && stR.bottom > -40 && stR.top < innerHeight + 40;
-    if (onStage) { sx = 0; sc = 0.66; sy = screenToWorldY(stR.bottom - stR.height * 0.04); yaw = FACE(0); pitch = 0.06; }
-    pitch += 0.18 * MF.view;                             // налив в меню: стакан чуть к зрителю — видно поверхность
+    // на наливе камера смотрит сверху — дно стакана уходит ниже; приподнимаем, чтобы не наезжал на название напитка
+    if (onStage) { sx = 0; sc = 0.66; sy = screenToWorldY(stR.bottom - stR.height * (0.04 + 0.16 * MF.view)); yaw = FACE(0); pitch = 0.06; }
+    pitch += (m ? 0.18 : 0.5) * MF.view;                 // налив в меню: стакан к зрителю — видно поверхность (телефон ещё и камера сверху)
     const g = cup.group;
     g.position.set(sx, sy + S.lift + Math.sin(time * 1.1) * 0.025 * idle * calm, 0);
     g.scale.setScalar(sc);
@@ -1840,6 +1872,7 @@ function makeBigCup(scene, pos) {
     // сторона смотрит от зрителя (середина оборота). Оборот вернули вместо соскальзывания рукава: плоская
     // «бумажка» смотрелась нереалистично (Томер 25.10). Чуть приподнимается в руке — тень под ним светлеет.
     const items = [...document.querySelectorAll('.item')];
+    { const ct = document.getElementById('ctot'); if (ct) ct.textContent = '/ ' + String(items.length).padStart(2, '0'); }
     const BRAND = cup ? '#' + cup.sleeveMat.color.getHexString() : null;   // рукав по умолчанию — как в кадрах Blender
     let cur = -1, inMenu = false, labelCall = null;
     const turn = (hex, name, dir) => {
@@ -1855,9 +1888,16 @@ function makeBigCup(scene, pos) {
       labelCall = gsap.delayedCall(0.65, () => cup.setLabel(name));
     };
     const drink = (i, dir) => turn(items[i].dataset.sleeve, items[i].dataset.label, dir);
-    addEventListener('menuarm', () => { items.forEach(el => el.classList.remove('arm', 'poured')); const el = items[cur]; if (el) { void el.offsetWidth; el.classList.add('arm'); } });   // полоска выбора с нуля — вместе с таймером
-    addEventListener('menupour', () => { const el = items[cur]; if (el) { el.classList.remove('arm'); el.classList.add('poured'); } });
-    document.getElementById('menu').addEventListener('click', e => { if (!e.target.closest('a')) menuFill(MF.label); });   // тап — налить сразу
+    // кнопка активной карточки: «Налить» → «Наливаем…» → «Готово»; смена напитка — снова «Налить»
+    const btnOf = () => items[cur] && items[cur].querySelector('.pour-it');
+    const setBtn = (txt, dis) => items.forEach((el, k) => { const b = el.querySelector('.pour-it'); if (!b) return;
+      b.textContent = k === cur ? txt : 'Налить'; b.disabled = k === cur && dis; });
+    addEventListener('menuprep', () => setBtn('Налить', false));
+    addEventListener('menupour', () => setBtn('Наливаем…', true));
+    addEventListener('menudone', () => setBtn('Готово ✓', true));
+    items.forEach(el => { const b = el.querySelector('.pour-it'); if (b) b.addEventListener('click', e => { e.stopPropagation(); menuFill(MF.label); }); });
+    const stageTap = document.querySelector('.menu .stage');   // тап по стакану (окно сцены на телефоне) — то же, что кнопка
+    if (stageTap) stageTap.addEventListener('click', () => menuFill(MF.label));
     const flood = document.getElementById('flood');
     ScrollTrigger.create({ trigger: '#menu', start: 'top top', onEnter: () => flood.classList.add('gone'), onLeaveBack: () => flood.classList.remove('gone') });
     const setItem = i => {
@@ -1865,6 +1905,8 @@ function makeBigCup(scene, pos) {
       const dir = i > cur ? 1 : -1;
       cur = i;
       items.forEach((el, k) => { el.classList.toggle('on', k === i); el.classList.remove('arm', 'poured'); });
+      const cn = document.getElementById('cnum'), cc = cn && cn.parentElement;
+      if (cn) { cn.textContent = String(i + 1).padStart(2, '0'); cc.classList.toggle('later', i > 0); }
       if (inMenu) drink(i, dir);                     // до входа в меню стакан фирменный; напиток наденется при входе
     };
     // Меню закреплено, список — барабан. Компьютер: активный напиток в середине, рядом стакан; один напиток = 0.75
@@ -1876,8 +1918,10 @@ function makeBigCup(scene, pos) {
       const MOB = MOBILE();
       const list = document.getElementById('list'), drum = list.parentElement, last = items.length - 1;
       let C = [];
-      const measure = () => { const lt = list.getBoundingClientRect().top; C = items.map(el => { const r = el.getBoundingClientRect(); return r.top - lt + r.height / 2; }); };
-      const yAt = f => { const k = Math.min(last - 1, Math.floor(f)), t = f - k; return drum.clientHeight * (MOB ? 0.3 : 0.42) - (C[k] + (C[k + 1] - C[k]) * t); };
+      // телефон — одна карточка: прижата верхом к одной линии (по центру карточка с кнопкой и длинным описанием
+      // поднималась на стакан — 29.10); компьютер — по центру, как было
+      const measure = () => { const lt = list.getBoundingClientRect().top; C = items.map(el => { const r = el.getBoundingClientRect(); return MOB ? r.top - lt : r.top - lt + r.height / 2; }); };
+      const yAt = f => { const k = Math.min(last - 1, Math.floor(f)), t = f - k; return (MOB ? 14 : drum.clientHeight * 0.42) - (C[k] + (C[k + 1] - C[k]) * t); };
       const setY = gsap.quickTo(list, 'y', { duration: MOB ? 0.45 : 0.6, ease: 'power3.out' });
       measure(); gsap.set(list, { y: yAt(0) });
       const pin = ScrollTrigger.create({ trigger: '#menu', start: 'top top', end: () => '+=' + innerHeight * (MOB ? 0.6 : 0.75) * last, pin: true,
@@ -1899,7 +1943,7 @@ function makeBigCup(scene, pos) {
           // lock: Lenis гасит свою анимацию от касаний — палец ещё двигается после шага, прокрутка вставала на полпути
           lenis.scrollTo(y, { duration: out ? 0.8 : 0.55, easing: t => 1 - Math.pow(1 - t, 3), force: true, lock: true });
         };
-        const obs = ScrollTrigger.observe({ target: window, type: 'touch', preventDefault: true, tolerance: 8, dragMinimum: 4,
+        const obs = ScrollTrigger.observe({ target: window, type: 'touch', preventDefault: true, tolerance: 8, dragMinimum: 4, ignore: '.pour-it, .menu .stage, a',
           onPress: () => { done = false; }, onUp: () => step(1), onDown: () => step(-1) });
         obs.disable();
         let lift = -9; addEventListener('touchend', () => { lift = performance.now(); }, { passive: true });

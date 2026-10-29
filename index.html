@@ -668,16 +668,23 @@ function makeBigCup(scene, pos) {
       cupPose: () => { const v = cup.group.getWorldPosition(new THREE.Vector3()).project(cam);
         return [cup.group.visible && !SEQ.on ? 1 : 0, (v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight, ...cup.group.getWorldQuaternion(new THREE.Quaternion()).toArray()]; },
       cupY: () => { const v = cup.group.getWorldPosition(new THREE.Vector3()).project(cam); return (0.5 - v.y * 0.5) * innerHeight; },
-      cupBox: () => { const b = new THREE.Box3().setFromObject(cup.group), r = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
-        for (let i = 0; i < 8; i++) { const v = new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).project(cam);
-          const x = (v.x * 0.5 + 0.5) * innerWidth, y = (0.5 - v.y * 0.5) * innerHeight;
-          r.x0 = Math.min(r.x0, x); r.x1 = Math.max(r.x1, x); r.y0 = Math.min(r.y0, y); r.y1 = Math.max(r.y1, y); } return r; } };
+      // силуэт стакана на экране — по вершинам видимых частей (коробка вокруг всего захватывала отведённую в сторону
+      // невидимую крышку и раздувалась при взгляде сверху — 29.10)
+      cupBox: () => { const r = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }, v = new THREE.Vector3(); cup.group.updateMatrixWorld(true);
+        cup.group.traverseVisible(o => { if (!o.isMesh || o.material.isShadowMaterial) return; const p = o.geometry.attributes.position;
+          for (let i = 0; i < p.count; i += 7) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).project(cam);
+            const x = (v.x * 0.5 + 0.5) * innerWidth, y = (0.5 - v.y * 0.5) * innerHeight;
+            r.x0 = Math.min(r.x0, x); r.x1 = Math.max(r.x1, x); r.y0 = Math.min(r.y0, y); r.y1 = Math.max(r.y1, y); } });
+        return r; } };
   }
 
   // камера неподвижна: смотрит на стакан. Кофе заполняет страницу слоем в экранных координатах.
   function placeCamera() {
     // во время налива камера поднимается — смотрим на стакан чуть сверху и видим поверхность кофе внутри
-    cam.position.set(0, 0.55 + 0.9 * S.camUp, 6.2); cam.lookAt(0, 0.45 + 0.2 * S.camUp, 0);
+    // налив в меню: камера поднимается, чтобы смотреть в стакан сверху (иначе она ниже поверхности напитка и видна
+    // только задняя стенка над ним)
+    const cu = S.camUp, mv = window.__menuFill ? __menuFill.view : 0;
+    cam.position.set(0, 0.55 + 0.9 * cu + 3.0 * mv, 6.2); cam.lookAt(0, 0.45 + 0.2 * cu + 0.4 * mv, 0);
     cam.fov = MOBILE() ? 30 : 24; cam.updateProjectionMatrix();
   }
 
@@ -795,6 +802,15 @@ function makeBigCup(scene, pos) {
     return m;
   })();
   const SP = Array.from({ length: SSEG + 1 }, () => new THREE.Vector3()), SL = new Float32Array(SSEG + 1);
+  // струя налива в меню: сверху из-за края экрана в горлышко — вертикальный конус (у кромки тоньше: разгон). Кофе —
+  // тем же материалом, что струя налива; молоко, сливки, матча — своим (цвет по жидкости)
+  const liqMat = R && new THREE.MeshPhysicalMaterial({ color: 0xf1ece4, roughness: 0.28, metalness: 0, sheen: 0.3, sheenColor: new THREE.Color(1, 1, 1), envMap: streamEnv, envMapIntensity: 0.7 });
+  const menuStream = R && (() => {
+    const g = new THREE.CylinderGeometry(1, 0.7, 1, 18, 24, true); g.translate(0, -0.5, 0);
+    const m = new THREE.Mesh(g, coffeeMat); m.renderOrder = 2; m.frustumCulled = false; m.visible = false; scene.add(m); return m;
+  })();
+  const menuLiq = R && new THREE.Mesh(menuStream.geometry, liqMat);
+  if (menuLiq) { menuLiq.renderOrder = 2; menuLiq.frustumCulled = false; menuLiq.visible = false; scene.add(menuLiq); }
   const sT = new THREE.Vector3(), sN = new THREE.Vector3(), sC = new THREE.Vector3(), sO = new THREE.Vector3(), sX = new THREE.Vector3();
   const drops = [];
   if (R) for (let i = 0; i < 24; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), coffeeMat); d.visible = false; scene.add(d); drops.push(d); }
@@ -948,7 +964,7 @@ function makeBigCup(scene, pos) {
   window.__stain = () => ({ mark: [...cup.stainU.uMark.value], rim: [...cup.stainU.uRimW.value], plane: cup.stainU.uPlane.value.toArray(), wet: cup.stainU.uWet.value, V: FLOW.V, a: FLOW.alpha });   // для tests/
   const wB = new THREE.Vector3(), wT = new THREE.Vector3(), cen = new THREE.Vector3(), tmpP = new THREE.Vector3();
   const DARK = [0.035, 0.016, 0.007], CREMA = [0.42, 0.25, 0.12];
-  function updateSurface(level) {
+  function updateSurface(level, dark = DARK, crema = CREMA) {
     if (level === null) { surface.visible = false; return; }
     cup.inner.updateMatrixWorld(true);
     const pos = surfGeo.attributes.position, col = surfGeo.attributes.color;
@@ -975,8 +991,8 @@ function makeBigCup(scene, pos) {
       tmpP.fromBufferAttribute(pos, 1 + SURF_N + i); tmpP.lerp(cen, 0.14);   // внутреннее кольцо — край кремы
       pos.setXYZ(1 + i, tmpP.x, tmpP.y, tmpP.z);
     }
-    col.setXYZ(0, ...DARK);
-    for (let i = 0; i < SURF_N; i++) { col.setXYZ(1 + i, ...DARK); col.setXYZ(1 + SURF_N + i, ...CREMA); }
+    col.setXYZ(0, ...dark);
+    for (let i = 0; i < SURF_N; i++) { col.setXYZ(1 + i, ...dark); col.setXYZ(1 + SURF_N + i, ...crema); }
     pos.needsUpdate = true; col.needsUpdate = true; surfGeo.computeVertexNormals(); surfGeo.computeBoundingSphere();
     surface.visible = true;
   }
@@ -1289,6 +1305,92 @@ function makeBigCup(scene, pos) {
     SEQ.last = key;
   }
 
+
+  // ── налив в меню (вторая секция, этап 1 — Томер 29.10: «второй экран проработать так же, как первый») ──
+  // Рецепт — данные: что льём и до какого объёма (доли полного стакана). Смена напитка: крышка надевается, стакан
+  // делает оборот (turn), на его середине — новый пустой стакан; крышка снимается, стакан клонится к зрителю
+  // (видна поверхность), сверху из-за края падает струя. Уровень — из объёма той же физикой, что в наливе (levelFor),
+  // цвет поверхности — смесь налитого по объёму (пена ложится сверху и перекрывает)
+  const LIQ = {
+    coffee: { c: [0.05, 0.025, 0.012], rim: [0.42, 0.25, 0.12], coffee: true },
+    coldbrew: { c: [0.035, 0.018, 0.01], rim: [0.16, 0.09, 0.05], coffee: true },
+    milk: { c: [0.93, 0.9, 0.85], hex: 0xf1ece4 },
+    foam: { c: [0.97, 0.95, 0.92], hex: 0xf7f3ec, top: 5 },
+    cream: { c: [0.95, 0.89, 0.78], hex: 0xf3e6cf },
+    oat: { c: [0.9, 0.85, 0.76], hex: 0xece2d0 },
+    matcha: { c: [0.28, 0.5, 0.09], hex: 0x6f9a2c, top: 3 },
+  };
+  const RECIPES = {
+    cappuccino: [['coffee', 0.24], ['milk', 0.66], ['foam', 0.86]],
+    raf: [['coffee', 0.22], ['cream', 0.84]],
+    'matcha latte': [['oat', 0.5], ['matcha', 0.84]],
+    'cold brew': [['coldbrew', 0.84]],
+    'flat white': [['coffee', 0.26], ['milk', 0.82]],
+  };
+  const MF = { lid: 0, view: 0, V: 0, Va: 0, vols: {}, kind: null, t0: 0, end: -1, tl: null, label: null };
+  window.__menuFill = MF;   // для tests/
+  const MRATE = 0.24, MFALL = 0.45;                         // объём в секунду (стакан ~3 с); струя долетает за ~0.45 с
+  function menuDrink(label) {
+    if (MF.tl) MF.tl.kill();
+    MF.label = label || null;
+    const rec = label && RECIPES[label], tl = MF.tl = gsap.timeline();
+    if (REDUCED) {                                          // без движения: сразу готовый напиток
+      MF.kind = null; MF.end = -1; MF.vols = {}; MF.V = MF.Va = 0; MF.lid = MF.view = rec ? 1 : 0;
+      if (rec) { let prev = 0; for (const [k, to] of rec) { MF.vols[k] = to - prev; prev = to; } MF.V = MF.Va = prev; }
+      return;
+    }
+    tl.to(MF, { lid: 0, view: 0, duration: 0.3, ease: 'power2.in' }, 0);
+    tl.call(() => { MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.end = -1; }, null, 0.6);   // середина оборота — новый стакан
+    if (!rec) return;
+    tl.to(MF, { lid: 1, view: 1, duration: 0.6, ease: 'power2.inOut' }, 1.3);
+    let t = 1.75, prev = 0;
+    for (const [kind, to] of rec) {
+      const dur = (to - prev) / MRATE;
+      tl.call(() => { MF.kind = kind; MF.t0 = performance.now() / 1000; MF.end = -1; }, null, t);
+      tl.to(MF, { V: to, duration: dur, ease: 'sine.inOut' }, t + MFALL);
+      tl.call(() => { MF.end = performance.now() / 1000; }, null, t + MFALL + dur);
+      t += MFALL + dur + 0.55; prev = to;
+    }
+  }
+  const mT = new THREE.Vector3();
+  function menuPour(time) {
+    if (!R) return;
+    menuStream.visible = menuLiq.visible = false;
+    if (SEQ.on || (MF.lid < 0.02 && MF.V <= 0)) return;
+    if (MF.V > MF.Va && MF.kind) { MF.vols[MF.kind] = (MF.vols[MF.kind] || 0) + MF.V - MF.Va; MF.Va = MF.V; }
+    const sc = cup.group.scale.x, M = cup.stainU.uMark.value;
+    cup.inner.getWorldPosition(orgW);
+    let h = 0.03;
+    if (MF.V > 0.002) {
+      // цвет — смесь по объёму; пена и матча ложатся сверху (вес top)
+      const col = [0, 0, 0], rim = [0, 0, 0]; let W = 0, coffee = true;
+      for (const k in MF.vols) {
+        const L = LIQ[k], w = MF.vols[k] * (L.top || 1); W += w; if (!L.coffee) coffee = false;
+        for (let j = 0; j < 3; j++) { col[j] += L.c[j] * w; rim[j] += (L.rim || L.c)[j] * w; }
+      }
+      for (let j = 0; j < 3; j++) { col[j] /= W; rim[j] = coffee ? rim[j] / W : col[j] * 0.86; }
+      h = levelFor(FLOW.alpha, Math.min(MF.V, vAt(FLOW.alpha) * 0.97));
+      // молочное — матовое (иначе отражает тёмную студию и выходит коричневым), кофе — глянец как в наливе
+      MF.col = col;
+      surfMat.roughness = coffee ? 0.07 : 0.55; surfMat.envMapIntensity = coffee ? 1 : 0.35;
+      updateSurface(orgW.y + sc * h, col, rim);
+    } else surface.visible = false;
+    MF.dbg = { h, lip: hLipAt(FLOW.alpha), vis: surface.visible, col: MF.col };   // для tests/
+    // мокрый след — только под жидкостью, не выше: у молочных «кофейный» след у линии давал коричневое кольцо (29.10)
+    M.fill(Math.max(0, h - 0.04)); cup.stainU.uWet.value = 0;
+    // струя: из-за верхнего края в середину поверхности (пусто — в дно); фронт падает с ускорением, после остановки
+    // хвост отрывается и падает так же
+    if (!MF.kind) return;
+    if (surface.visible) mT.copy(cen); else cup.inner.localToWorld(mT.set(0, 0.05, 0));
+    const now = performance.now() / 1000, yTop = screenToWorldY(-30, mT.z);
+    let top = yTop, bot = Math.max(mT.y, yTop - 4.9 * (now - MF.t0) ** 2);
+    if (MF.end > 0) { top = yTop - 4.9 * (now - MF.end) ** 2; if (top <= mT.y + 0.005) { MF.kind = null; return; } }
+    if (top - bot < 0.005) return;
+    const L = LIQ[MF.kind], m = L.coffee ? menuStream : menuLiq, r = (L.coffee ? 0.018 : 0.022) * sc;
+    if (!L.coffee) liqMat.color.setHex(L.hex);
+    m.position.set(mT.x, top, mT.z); m.scale.set(r, top - bot, r); m.visible = true;
+  }
+
   const stageEl = document.querySelector('.menu .stage');
   function frame(t) {
     if (!R || !running) return;
@@ -1312,6 +1414,7 @@ function makeBigCup(scene, pos) {
     const stR = m && prog > 0.9 ? stageEl.getBoundingClientRect() : null;
     const onStage = !!stR && stR.bottom > -40 && stR.top < innerHeight + 40;
     if (onStage) { sx = 0; sc = 0.66; sy = screenToWorldY(stR.bottom - stR.height * 0.04); yaw = FACE(0); pitch = 0.06; }
+    pitch += 0.18 * MF.view;                             // налив в меню: стакан чуть к зрителю — видно поверхность
     const g = cup.group;
     g.position.set(sx, sy + S.lift + Math.sin(time * 1.1) * 0.025 * idle * calm, 0);
     g.scale.setScalar(sc);
@@ -1335,11 +1438,20 @@ function makeBigCup(scene, pos) {
       cup.lid.quaternion.setFromEuler(eW.set(k * 3.2, k * 1.1, -k * 4.2));
     }
     cup.lid.visible = k < 0.999;
+    // меню: крышку снимают и отводят в сторону за край кадра (а не подбрасывают — летела сквозь заголовок)
+    if (MF.lid > 0) {
+      const q = MF.lid; g.updateMatrixWorld(true);
+      const st = cup.inner.localToWorld(vD.copy(cup.lidBase));
+      cup.lid.position.copy(cup.inner.worldToLocal(st.add(vE.set(3.2 * q * q, 0.22 * Math.sin(Math.PI * Math.min(1, q * 1.4)), 0.3 * q))));
+      cup.lid.quaternion.setFromEuler(eW.set(0, 0, -0.5 * q)); cup.lid.visible = q < 0.999;
+    }
     // уровень кофе: горизонтальная плоскость, стоит у нижней точки кромки (стакан полный, кофе переливается
     // через край, пока льётся). Сколько кофе внутри — решает наклон: чем сильнее клонится, тем меньше клин под кромкой
     cup.coffeeIn.visible = false;
     const fl = updateFlow(time);
+    if (fl.open && surfMat) { surfMat.roughness = 0.07; surfMat.envMapIntensity = 1; }   // меню делает молочное матовым — налив снова глянец
     updateSurface(fl.open && FLOW.V > 0.0015 && !SEQ.on ? fl.level : null);
+    menuPour(time);
     // заливка страницы — сколько кофе вылилось (сглажено ~0.3 с), с вылета стакана добирается до конца (fillEnd).
     // Объём считается и при кадрах Blender (десктоп): живой стакан спрятан, но наклоняется так же, как снята
     // симуляция. Раньше заливка шла по таймлайну и продолжалась треть секции после того, как стакан опустел
@@ -1608,6 +1720,7 @@ function makeBigCup(scene, pos) {
     const turn = (hex, name, dir) => {
       if (!cup) return;
       const c = cup.sleeveMat.color, to = new THREE.Color(hex);
+      menuDrink(name);
       if (REDUCED) { c.copy(to); cup.setLabel(name); return; }
       gsap.killTweensOf(S, 'spin,lift'); gsap.killTweensOf(c); if (labelCall) labelCall.kill();
       const TAU = Math.PI * 2, target = Math.round(S.spin / TAU) * TAU + dir * TAU;
@@ -1679,6 +1792,7 @@ function makeBigCup(scene, pos) {
       const c = cup.sleeveMat.color;
       if (scrollY >= menuST.start || (cup.label() === null && c.getHexString() === BRAND.slice(1))) return;
       gsap.killTweensOf(S, 'spin'); S.spin = 0; gsap.killTweensOf(c); if (labelCall) labelCall.kill();
+      if (MF.tl) MF.tl.kill(); MF.lid = MF.view = MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.label = null;
       if (cup.label() !== null) cup.setLabel(null);
       c.set(BRAND);
     });

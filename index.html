@@ -53,6 +53,12 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 .logo{font-family:var(--display);font-size:24px;text-decoration:none}
 .nav ul{display:flex;gap:30px;list-style:none;margin:0;padding:0;font-weight:500;font-size:15px}
 .nav a{text-decoration:none}
+/* статус «открыто сейчас» (часы — из блока «Когда», время Иерусалима); тап — к адресу и маршруту */
+.now{display:inline-flex;align-items:center;gap:8px;margin-left:auto;margin-right:30px;font-weight:500;font-size:15px;white-space:nowrap}
+.now i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.45}
+.now.open i{opacity:1;animation:nowPulse 2.4s ease-in-out infinite}
+@keyframes nowPulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.now.open i{animation:none}}
 
 /* hero */
 .hero{min-height:100dvh;display:flex;align-items:center;padding-block:96px 48px}
@@ -150,6 +156,8 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .chips{display:flex;flex-wrap:wrap;gap:14px}
 .chip{font:inherit;color:inherit;border:0;cursor:pointer;transition:transform .2s,box-shadow .2s;padding:16px 24px;border-radius:999px;background:#fff;box-shadow:0 1px 0 rgba(21,23,28,.06),0 12px 30px -16px rgba(21,23,28,.25);font-weight:600;font-size:18px}
 .milk p{font-size:20px;color:var(--ink-2);max-width:34ch}
+.visit .go{position:relative;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.visit .go .facts{flex-basis:100%;margin:6px 0 0;font-size:15px;opacity:.75;max-width:40ch}
 .chip:active{transform:scale(.96)}
 .chip.on{box-shadow:0 0 0 2px var(--ink),0 12px 30px -16px rgba(21,23,28,.25)}
 .chip:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
@@ -186,8 +194,9 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .split-w{display:inline-block}
 @media (max-width:820px){
   .nav ul{display:none}
+  .now{margin-right:0;font-size:14px}
   /* текст первого экрана целиком виден сразу, под стаканом (QA 25.10: при открытии был за нижним краем) */
-  .hero{align-items:flex-start;padding-block:47vh 24px}
+  .hero{align-items:flex-start;padding-block:47vh 24px;box-sizing:border-box}   /* ровно экран: отступ 47vh добавлялся к 100dvh — хиро был 1.5 экрана, низ пустой (аудит 29.10) */
   .hero h1{font-size:clamp(32px,9.4vw,44px)}
   .hero p{font-size:17px}
   .hero .copy{gap:18px}
@@ -222,9 +231,10 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
   .stamps .wrap>div:first-child,.visit .wrap{position:relative}
   /* справа от заголовка — по высоте заголовка, не ниже (иначе стакан наезжал на абзац и часы работы) */
   .cup-spot.side{position:absolute;right:0;top:0;width:36%;height:118px}
-  .cup-spot.side.top{top:calc(-1 * min(120px,13vh));height:min(110px,12vh)}   /* над заголовком «Заходи» справа — рядом с ним на узком телефоне тесно */
+  .cup-spot.go-spot{top:0;width:34%;height:136px}   /* справа от кнопок маршрута: над заголовком стакан залезал на статус «Открыто» в шапке (29.10) */
   .visit .cols{grid-template-columns:1fr}
-  .pour .before{padding-top:62vh}
+  .pour .before{padding-top:44vh}
+  .pour .before h2{font-size:38px;max-width:11ch}
   .pour .before h2,.pour .say{max-width:100%}
 }
 @media (prefers-reduced-motion:reduce){ .btn,.item{transition:none} .stamp{transform:none} }
@@ -233,7 +243,7 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 <canvas id="cup" aria-hidden="true"></canvas>
 <canvas id="seq" aria-hidden="true"></canvas>
 <div class="flood" id="flood"></div>
-<header class="nav"><div class="wrap"><a class="logo" href="#top">пенка</a><ul><li><a href="#menu">Меню</a></li><li><a href="#card">Карта</a></li><li><a href="#visit">Адрес</a></li></ul></div></header>
+<header class="nav"><div class="wrap"><a class="logo" href="#top">пенка</a><a class="now" id="now" href="#visit"><i aria-hidden="true"></i><span>Открыто</span></a><ul><li><a href="#menu">Меню</a></li><li><a href="#card">Карта</a></li><li><a href="#visit">Адрес</a></li></ul></div></header>
 
 <!-- автопрокрутка истории: пауза/продолжить, пока идёт; полоска — где мы в истории (до меню) -->
 <button class="autopill" id="autoPill" type="button" hidden aria-label="Пауза"><span class="i"></span><span class="t">Пауза</span></button>
@@ -310,11 +320,15 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
   <section class="visit" id="visit">
     <div class="wrap">
       <h2 data-split>Заходи за своим</h2>
-      <div class="cup-spot side top" data-s="0.3" aria-hidden="true"></div>
       <div class="cols">
         <div><h3>Где</h3><p style="font-size:22px">Тель-Авив, Флорентин.<br>Окно выдачи прямо на улицу.</p></div>
         <div><h3>Когда</h3><div class="hours"><span>Вс-Чт</span><span>7:00-19:00</span><span>Пт</span><span>7:00-14:00</span><span>Сб</span><span>выходной</span></div></div>
-        <a class="btn" href="https://www.google.com/maps/search/Florentin+Tel+Aviv" target="_blank" rel="noopener">Построить маршрут <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a>
+        <div class="go">
+          <a class="btn" href="https://www.google.com/maps/search/Florentin+Tel+Aviv" target="_blank" rel="noopener">Google Maps <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a>
+          <a class="btn ghost" href="https://waze.com/ul?q=Florentin%20Tel%20Aviv" target="_blank" rel="noopener">Waze <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></a>
+          <div class="cup-spot side go-spot" data-s="0.3" aria-hidden="true"></div>
+          <p class="facts">Доставка — Wolt и 10bis. Без кашрута. Веганское — любое: растительное молоко без доплаты.</p>
+        </div>
       </div>
       <div class="foot"><span>пенка, кофе с собой</span><span>Демо-макет. Стаканчик и кофе нарисованы кодом и считаются в браузере.</span></div>
     </div>
@@ -1564,6 +1578,23 @@ function makeBigCup(scene, pos) {
     }
   }
 
+  // «Открыто до 19:00» в шапке: часы — те же, что в блоке «Когда» (Вс–Чт 7–19, Пт 7–14, Сб — выходной), время Иерусалима
+  {
+    const HOURS = [[7, 19], [7, 19], [7, 19], [7, 19], [7, 19], [7, 14], null], DAYN = ['в воскресенье', 'в понедельник', 'во вторник', 'в среду', 'в четверг', 'в пятницу', 'в субботу'];
+    const el = document.getElementById('now');
+    const upd = () => {
+      if (!el) return;
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Jerusalem', weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]));
+      const d = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday), t = +p.hour + p.minute / 60, hr = HOURS[d];
+      let txt, open = false;
+      if (hr && t >= hr[0] && t < hr[1]) { open = true; txt = 'Открыто до ' + hr[1] + ':00'; }
+      else if (hr && t < hr[0]) txt = 'Откроемся в ' + hr[0] + ':00';
+      else { let k = 1; while (!HOURS[(d + k) % 7]) k++; const nd = (d + k) % 7; txt = (k === 1 ? 'Завтра' : DAYN[nd][0].toUpperCase() + DAYN[nd].slice(1)) + ' с ' + HOURS[nd][0] + ':00'; }
+      el.classList.toggle('open', open); el.lastChild.textContent = txt;
+    };
+    upd(); setInterval(upd, 60000);
+    window.__now = upd;   // для tests/
+  }
   const stageEl = document.querySelector('.menu .stage');
   // телефон после меню: стакан стоит в «местах» (.cup-spot) — едет к тому, что ближе к середине экрана, переезжает
   // плавно (сглаживание ~0.3 с), в пути чуть крутится; мест на экране нет — стакана нет
@@ -1819,8 +1850,11 @@ function makeBigCup(scene, pos) {
     // на весь налив), вне его 0.45. Смахнули сильно — секция держится на краю, пока налив не доиграет (короткая пауза
     // на краю, без вязкости под пальцем). Регулятор скорости прокрутки (v39) отклонён: «смотрится так себе»
     SEQ.tl = gsap.timeline({ paused: true });
-    const CH = { target: 0, p: 0, t: 0, init: false };
-    SEQ.tl.scrollTrigger = ScrollTrigger.create({ trigger: '#pour', start: 'top top', end: '+=400%', pin: true, onEnter: seqLoad,
+    // Длина налива (аудит 29.10, docs/qa/2026-10-29: при 400 % — ~5 немых экранов подряд, ~30 % страницы; ресёрч
+    // docs/research/2026-10-29-structure.md: немая сцена на телефоне ≤ 1–1.2 экрана). Телефон 2.2 экрана, компьютер 3 —
+    // там во время налива под струёй стоит заголовок. Доли таймлайна (и кадры Blender) от длины не зависят
+    const CH = { target: 0, p: 0, t: 0, init: false, span: MOBILE() ? 2.2 : 3 };
+    SEQ.tl.scrollTrigger = ScrollTrigger.create({ trigger: '#pour', start: 'top top', end: () => '+=' + Math.round(CH.span * 100) + '%', pin: true, onEnter: seqLoad,
       onUpdate: s => { CH.target = s.progress; if (!CH.init) { CH.init = true; CH.p = s.progress; } } });
     window.__chase = CH;   // для tests/
     gsap.ticker.add(() => {
@@ -1842,7 +1876,9 @@ function makeBigCup(scene, pos) {
       else if (dt > 0) {
         const w = back ? 18 : 6, x0 = CH.p - CH.target, v0 = CH.v || 0, e = Math.exp(-w * dt), c = v0 + w * x0;
         let v = (v0 - w * c * dt) * e;
-        v = Math.max(-1, Math.min(0.45 - 0.33 * band, v));
+        // упёрлись в конец налива (смахнули сильно, секция держится на краю) — темп налива 0.25 вместо 0.12: пауза на
+        // краю ~1.5 с вместо 2–3 с (аудит 29.10: «колесо крутится, экран стоит»). Обычная прокрутка — прежний темп
+        v = Math.max(-1, Math.min(0.45 - (CH.hold ? 0.2 : 0.33) * band, v));
         const amax = (Math.abs(v) < Math.abs(v0) && v * v0 >= 0 ? 4 : 1.2) * (back ? 10 : 1);
         v = v0 + Math.max(-amax * dt, Math.min(amax * dt, v - v0));
         const p = CH.p + (v0 + v) / 2 * dt;
@@ -1851,7 +1887,8 @@ function makeBigCup(scene, pos) {
       if (Math.abs(CH.p - SEQ.tl.progress()) > 1e-6) SEQ.tl.progress(CH.p);
       // держим секцию на краю, пока налив не доиграл (иначе стакан уезжал бы с недолитым кофе)
       // при автопрокрутке («Налить») край не держим силой — она сама дожидается налива (иначе сбивалась и вставала)
-      if (lenis && !REDUCED && !back && !(window.__auto && window.__auto.on && !window.__auto.paused) && scrollY > st.end - 1 && CH.p < 0.86) lenis.scrollTo(st.end - 1, { immediate: true });
+      CH.hold = !!(lenis && !REDUCED && !back && !(window.__auto && window.__auto.on && !window.__auto.paused) && scrollY > st.end - 1 && CH.p < 0.86);
+      if (CH.hold) lenis.scrollTo(st.end - 1, { immediate: true });
     });
     // ПЕРВЫЙ ЭКРАН: пока читают заголовок, стакан медленно проворачивается на пол-оборота (Томер 24.10:
     // «не быстро, чтобы ко второй секции он сделал примерно наоборот»). Отдельная величина turn — её
@@ -1910,10 +1947,10 @@ function makeBigCup(scene, pos) {
         const L = lum(MILK.map((m, i) => m + (COFFEE[i] - m) * k)), on = say.classList.contains('on-coffee');
         if (!on && L < 0.163) say.classList.add('on-coffee'); else if (on && L > 0.183) say.classList.remove('on-coffee');
       });
-    } else SEQ.tl
-      .to(say, { opacity: 1, duration: 0.01 }, 0.9)
-      .from(wordsOf('#say h2'), { yPercent: 110, duration: 0.07, stagger: 0.012 }, 0.9)
-      .from('#say p', { y: 20, opacity: 0, duration: 0.05 }, 0.96);
+    } else SEQ.tl   // телефон: заголовок входит, пока стакан улетает вверх (с 0.9 был пустой коричневый кадр — аудит 29.10)
+      .to(say, { opacity: 1, duration: 0.01 }, 0.8)
+      .from(wordsOf('#say h2'), { yPercent: 110, duration: 0.07, stagger: 0.012 }, 0.8)
+      .from('#say p', { y: 20, opacity: 0, duration: 0.05 }, 0.87);
 
     // МЕНЮ: смена напитка — стакан делает оборот, рукав перекрашивается, название меняется, пока лицевая
     // сторона смотрит от зрителя (середина оборота). Оборот вернули вместо соскальзывания рукава: плоская
@@ -1996,7 +2033,8 @@ function makeBigCup(scene, pos) {
           // lock: Lenis гасит свою анимацию от касаний — палец ещё двигается после шага, прокрутка вставала на полпути
           lenis.scrollTo(y, { duration: out ? 0.8 : 0.55, easing: t => 1 - Math.pow(1 - t, 3), force: true, lock: true });
         };
-        const obs = ScrollTrigger.observe({ target: window, type: 'touch', preventDefault: true, tolerance: 8, dragMinimum: 4, ignore: '.pour-it, .menu .stage, a',
+        const obs = ScrollTrigger.observe({ target: window, type: 'touch', preventDefault: true, tolerance: 8, dragMinimum: 4, ignore: '.pour-it, .menu .stage, .menu a',   // ссылки шапки (логотип, «Открыто») — не исключение: свайп, начатый на них, тоже листает (29.10)
+
           onPress: () => { done = false; }, onUp: () => step(1), onDown: () => step(-1) });
         obs.disable();
         let lift = -9; addEventListener('touchend', () => { lift = performance.now(); }, { passive: true });
@@ -2055,7 +2093,7 @@ function makeBigCup(scene, pos) {
     // вверх сквозь него — QA 25.10)
     // (26.10, Томер: «пока стакан крутится — весь экран белый»): первый экран закреплён на 70 % экрана прокрутки —
     // текст стоит, стакан доворачивается, вокруг зёрна; текст уходит в последней четверти закрепления
-    if (MOBILE()) gsap.timeline({ scrollTrigger: { trigger: '.hero', start: 'top top', end: '+=70%', pin: true, scrub: 0.4, refreshPriority: 1 } })
+    if (MOBILE()) gsap.timeline({ scrollTrigger: { trigger: '.hero', start: 'top top', end: '+=45%', pin: true, scrub: 0.4, refreshPriority: 1 } })   // 70 % → 45 %: аудит 29.10 — пустой экран между первым и «Осторожно»
       .to('.hero .copy', { opacity: 0, y: -36, ease: 'none', duration: 0.25 }, 0.75);
     // потёки дорастают, пока край меню уходит вверх
     // и вязко дотекают, пока молоко проходит экран (scrub 2 — плавно догоняют прокрутку; DR.p берёт максимум)

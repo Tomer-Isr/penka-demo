@@ -95,6 +95,16 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 
 /* меню на кофе */
 .menu{background:var(--coffee);color:var(--foam);position:relative}
+/* брызги налива: капли «прилипают» по краям экрана меню, цвета жидкости, копятся; под текстом */
+.splats{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.menu .wrap{position:relative;z-index:1}
+.splat{position:absolute;width:var(--s);height:var(--s);transition:transform var(--d,0s) cubic-bezier(.5,0,.8,.6) .5s}
+.splat i{display:block;width:100%;height:100%;opacity:.92;border-radius:50% 50% 48% 52%/55% 55% 45% 45%;transform:scale(0);animation:splat-in .3s cubic-bezier(.3,1.7,.5,1) forwards;
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,var(--h,.6)) 0 11%,transparent 14%),radial-gradient(circle at 50% 58%,var(--c) 0 58%,var(--e) 100%);box-shadow:0 1px 1.5px rgba(0,0,0,.28)}
+@keyframes splat-in{to{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.splats{display:none}}
+/* телефон: пока меню на экране, листает страница (один свайп — один напиток), не браузер */
+html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .menu .wrap{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:40px;padding-block:14vh}
 .menu .list{display:flex;flex-direction:column}
 .item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:24px;padding:7vh 0;opacity:.35;transition:opacity .4s}
@@ -212,17 +222,22 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
   </section>
 
   <section class="menu" id="menu">
+    <div class="splats" aria-hidden="true"></div>
     <div class="wrap">
       <div>
         <h2 data-split>Что пьём сегодня</h2>
         <p class="lead">Цены за стакан 350 мл. Любое молоко без доплаты.</p>
         <div class="stage" aria-hidden="true"></div>
         <div class="drum"><div class="list" id="list">
+          <div class="item" data-sleeve="#7a2e1d" data-label="espresso"><h3>Эспрессо</h3><span class="price">9 ₪</span><p>Двойной, как и всё у нас. Плотная крема, сахар по желанию.</p></div>
+          <div class="item" data-sleeve="#c08a5a" data-label="macchiato"><h3>Макиато</h3><span class="price">11 ₪</span><p>Эспрессо и шапка молочной пены сверху. Пьётся в три глотка.</p></div>
+          <div class="item" data-sleeve="#d9832b" data-label="americano"><h3>Американо</h3><span class="price">12 ₪</span><p>Двойной эспрессо, долитый горячей водой. Крема остаётся сверху.</p></div>
+          <div class="item" data-sleeve="#e2574c" data-label="hafuch"><h3>Хафух</h3><span class="price">15 ₪</span><p>Израильская классика: сначала молоко с пеной, сверху эспрессо.</p></div>
           <div class="item" data-sleeve="#2f4cf0" data-label="cappuccino"><h3>Капучино</h3><span class="price">14 ₪</span><p>Плотная пенка, два шота, корица по желанию.</p></div>
-          <div class="item" data-sleeve="#d9832b" data-label="raf"><h3>Раф</h3><span class="price">17 ₪</span><p>Сливки, ваниль, эспрессо. Взбиваем вместе, а не отдельно.</p></div>
-          <div class="item" data-sleeve="#7da84a" data-label="matcha latte"><h3>Матча-латте</h3><span class="price">18 ₪</span><p>Церемониальная матча и холодное овсяное.</p></div>
-          <div class="item" data-sleeve="#1c1d22" data-label="cold brew"><h3>Колд брю</h3><span class="price">16 ₪</span><p>Настаиваем шестнадцать часов. Лёд кладём по запросу.</p></div>
           <div class="item" data-sleeve="#e9b9c8" data-label="flat white"><h3>Флэт уайт</h3><span class="price">15 ₪</span><p>Меньше молока, больше вкуса. Для тех, кто знает.</p></div>
+          <div class="item" data-sleeve="#7da84a" data-label="matcha latte"><h3>Матча-латте</h3><span class="price">18 ₪</span><p>Церемониальная матча и холодное овсяное.</p></div>
+          <div class="item" data-sleeve="#5aa9d6" data-label="ice coffee"><h3>Айс-кафе</h3><span class="price">17 ₪</span><p>Израильский холодный: кофе, молоко и лёд, взбитые в густую шугу.</p></div>
+          <div class="item" data-sleeve="#1c1d22" data-label="cold brew"><h3>Колд брю</h3><span class="price">16 ₪</span><p>Настаиваем шестнадцать часов. Лёд кладём по запросу.</p></div>
         </div></div>
       </div>
       <div aria-hidden="true"></div>
@@ -802,15 +817,33 @@ function makeBigCup(scene, pos) {
     return m;
   })();
   const SP = Array.from({ length: SSEG + 1 }, () => new THREE.Vector3()), SL = new Float32Array(SSEG + 1);
-  // струя налива в меню: сверху из-за края экрана в горлышко — вертикальный конус (у кромки тоньше: разгон). Кофе —
-  // тем же материалом, что струя налива; молоко, сливки, матча — своим (цвет по жидкости)
-  const liqMat = R && new THREE.MeshPhysicalMaterial({ color: 0xf1ece4, roughness: 0.28, metalness: 0, sheen: 0.3, sheenColor: new THREE.Color(1, 1, 1), envMap: streamEnv, envMapIntensity: 0.7 });
+  // струя налива в меню: сверху из-за края экрана в горлышко. Та же «ткань», что у струи налива: рябь бежит вниз
+  // (шейдер coffeeMat), струя сужается при разгоне и чуть покачивается, у поверхности — утолщение удара. Кофе —
+  // материалом струи налива; молоко, сливки, матча — матовым с той же рябью без янтарного просвета; вода —
+  // прозрачная (преломление). 29.10: была ровная трубка — «поработать над реалистичностью струек»
+  const noGlow = sh => { coffeeMat.onBeforeCompile(sh); sh.fragmentShader = sh.fragmentShader.replace('Tr * vec3(0.85, 0.45, 0.18) * uGlow', 'vec3(0.0)'); };
+  const liqMat = R && new THREE.MeshPhysicalMaterial({ color: 0xf1ece4, roughness: 0.3, metalness: 0, sheen: 0.4, sheenColor: new THREE.Color(1, 1, 1), envMap: streamEnv, envMapIntensity: 0.6 });
+  if (liqMat) liqMat.onBeforeCompile = sh => noGlow(sh);
+  // вода: полупрозрачная с бликами (transmission не видит HTML-фон за холстом — струя выходила белой)
+  const waterMat = R && new THREE.MeshPhysicalMaterial({ color: 0xfff8f0, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.32, depthWrite: false, envMap: streamEnv, envMapIntensity: 2.6 });
+  if (waterMat) { waterMat.onBeforeCompile = sh => noGlow(sh); waterMat.customProgramCacheKey = () => 'water-stream'; }
+  if (liqMat) liqMat.customProgramCacheKey = () => 'milk-stream';
+  const MSEG = 64, MRAD = 14, MCNT = MRAD + 1;
   const menuStream = R && (() => {
-    const g = new THREE.CylinderGeometry(1, 0.7, 1, 18, 24, true); g.translate(0, -0.5, 0);
+    const g = new THREE.BufferGeometry(), n = (MSEG + 1) * MCNT, idx = [];
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+    for (let i = 1; i <= MSEG; i++) for (let j = 1; j <= MRAD; j++) {
+      const a = MCNT * (i - 1) + j - 1, b = MCNT * i + j - 1, c = MCNT * i + j, d = MCNT * (i - 1) + j; idx.push(a, b, d, b, c, d);
+    }
+    g.setIndex(idx);
     const m = new THREE.Mesh(g, coffeeMat); m.renderOrder = 2; m.frustumCulled = false; m.visible = false; scene.add(m); return m;
   })();
-  const menuLiq = R && new THREE.Mesh(menuStream.geometry, liqMat);
-  if (menuLiq) { menuLiq.renderOrder = 2; menuLiq.frustumCulled = false; menuLiq.visible = false; scene.add(menuLiq); }
+  const menuLiq = menuStream;                               // одна сетка, материал — по жидкости
+  // брызги удара: мелкие капли выпрыгивают из места, где струя бьёт в поверхность, и падают обратно
+  const splashDrops = [];
+  if (R) for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), coffeeMat); d.visible = false; d.renderOrder = 2; scene.add(d); splashDrops.push(d); }
   const sT = new THREE.Vector3(), sN = new THREE.Vector3(), sC = new THREE.Vector3(), sO = new THREE.Vector3(), sX = new THREE.Vector3();
   const drops = [];
   if (R) for (let i = 0; i < 24; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), coffeeMat); d.visible = false; scene.add(d); drops.push(d); }
@@ -1312,20 +1345,28 @@ function makeBigCup(scene, pos) {
   // (видна поверхность), сверху из-за края падает струя. Уровень — из объёма той же физикой, что в наливе (levelFor),
   // цвет поверхности — смесь налитого по объёму (пена ложится сверху и перекрывает)
   const LIQ = {
+    shot: { c: [0.36, 0.2, 0.09], rim: [0.2, 0.1, 0.045], coffee: true },          // эспрессо: сверху крема
     coffee: { c: [0.05, 0.025, 0.012], rim: [0.42, 0.25, 0.12], coffee: true },
     coldbrew: { c: [0.035, 0.018, 0.01], rim: [0.16, 0.09, 0.05], coffee: true },
+    water: { c: [0.06, 0.03, 0.014], top: 0.35, water: true, coffee: true },      // вода темнеет от кофе, крема остаётся сверху
     milk: { c: [0.93, 0.9, 0.85], hex: 0xf1ece4 },
     foam: { c: [0.97, 0.95, 0.92], hex: 0xf7f3ec, top: 5 },
-    cream: { c: [0.95, 0.89, 0.78], hex: 0xf3e6cf },
     oat: { c: [0.9, 0.85, 0.76], hex: 0xece2d0 },
     matcha: { c: [0.28, 0.5, 0.09], hex: 0x6f9a2c, top: 3 },
+    slush: { c: [0.62, 0.46, 0.32], hex: 0xa07a58, thick: 1.8 },                // айс-кафе: густая шуга
   };
+  // меню как в израильской кофейне (29.10): без молока — эспрессо, американо, колд брю; с молоком — остальное.
+  // Хафух — молоко с пеной, эспрессо сверху (поэтому «перевёрнутый»)
   const RECIPES = {
-    cappuccino: [['coffee', 0.24], ['milk', 0.66], ['foam', 0.86]],
-    raf: [['coffee', 0.22], ['cream', 0.84]],
+    espresso: [['shot', 0.22]],
+    macchiato: [['shot', 0.22], ['foam', 0.34]],
+    americano: [['shot', 0.2], ['water', 0.84]],
+    hafuch: [['milk', 0.5], ['foam', 0.66], ['shot', 0.84]],
+    cappuccino: [['shot', 0.24], ['milk', 0.66], ['foam', 0.86]],
+    'flat white': [['shot', 0.26], ['milk', 0.82]],
     'matcha latte': [['oat', 0.5], ['matcha', 0.84]],
+    'ice coffee': [['slush', 0.86]],
     'cold brew': [['coldbrew', 0.84]],
-    'flat white': [['coffee', 0.26], ['milk', 0.82]],
   };
   const MF = { lid: 0, view: 0, V: 0, Va: 0, vols: {}, kind: null, t0: 0, end: -1, tl: null, label: null };
   window.__menuFill = MF;   // для tests/
@@ -1343,19 +1384,48 @@ function makeBigCup(scene, pos) {
     tl.call(() => { MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.end = -1; }, null, 0.6);   // середина оборота — новый стакан
     if (!rec) return;
     tl.to(MF, { lid: 1, view: 1, duration: 0.6, ease: 'power2.inOut' }, 1.3);
+    // молоко → пена — один питчер: струя не прерывается (была пустая секунда между шагами); между разными
+    // жидкостями — короткая пауза: хвост одной оторвался, следующая уже падает
+    const same = (a, b) => a === 'milk' && b === 'foam';
     let t = 1.75, prev = 0;
-    for (const [kind, to] of rec) {
-      const dur = (to - prev) / MRATE;
-      tl.call(() => { MF.kind = kind; MF.t0 = performance.now() / 1000; MF.end = -1; }, null, t);
-      tl.to(MF, { V: to, duration: dur, ease: 'sine.inOut' }, t + MFALL);
-      tl.call(() => { MF.end = performance.now() / 1000; }, null, t + MFALL + dur);
-      t += MFALL + dur + 0.55; prev = to;
-    }
+    rec.forEach(([kind, to], i) => {
+      const dur = (to - prev) / MRATE, cont = i > 0 && same(rec[i - 1][0], kind), last = i === rec.length - 1 || !same(kind, rec[i + 1][0]);
+      if (cont) tl.call(() => { MF.kind = kind; }, null, t);
+      else tl.call(() => { MF.kind = kind; MF.t0 = performance.now() / 1000; MF.end = -1; }, null, t);
+      const at = cont ? t : t + MFALL;
+      tl.to(MF, { V: to, duration: dur, ease: cont ? (last ? 'sine.out' : 'none') : (last ? 'sine.inOut' : 'sine.in') }, at);
+      if (last) { tl.call(() => { MF.end = performance.now() / 1000; }, null, at + dur); t = at + dur + 0.45; } else t = at + dur;   // хвост успевает упасть
+      prev = to;
+    });
   }
+  // брызги по краям экрана: пока струя бьёт в стакан, по краям прилипают капли её цвета (Томер 29.10: «брызги,
+  // которые оседают по краям, чтобы фон не был пустым»); некоторые медленно сползают; копятся, до 60 штук
+  const splatBox = document.querySelector('.menu .splats'), SPL = [];
+  const SPLAT_C = { shot: ['#5a3218', '#25120a', .55], coffee: ['#3a1d0e', '#160a04', .55], coldbrew: ['#2a150b', '#100703', .5], water: ['rgba(255,250,240,.16)', 'rgba(255,250,240,.42)', .8],
+    milk: ['#f3eee6', '#cfc6b8', .7], foam: ['#f8f5ef', '#d8d0c3', .7], oat: ['#ece2d0', '#c7b9a0', .7], matcha: ['#7fa63a', '#46651a', .55], slush: ['#a8805c', '#6a4b31', .55] };
+  function splat(kind, big) {
+    if (!splatBox || REDUCED) return;
+    const r = splatBox.getBoundingClientRect(), side = Math.random() < 0.5, W = r.width, H = innerHeight;
+    const x = (side ? 0.015 + Math.random() * 0.12 : 0.865 + Math.random() * 0.12) * W, y = -r.top + H * (0.06 + Math.random() * 0.88);
+    const s = (big ? 9 : 3) + Math.random() * (big ? 8 : 7), [c, e, hl] = SPLAT_C[kind] || SPLAT_C.coffee;
+    const el = document.createElement('div'); el.className = 'splat';
+    el.style.cssText = `left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;--s:${s.toFixed(1)}px;--c:${c};--e:${e};--h:${hl}`;
+    // форма неровная (свой радиус у каждого угла), вокруг — 2–4 капельки-спутника в сторону разлёта
+    const q = () => (40 + Math.random() * 20).toFixed(0) + '%', dir = Math.random() * Math.PI * 2;
+    let sat = '';
+    for (let k = 0, n = 2 + Math.floor(Math.random() * 3); k < n; k++) {
+      const d = s * (0.8 + Math.random() * 1.4), a = dir + (Math.random() - 0.5) * 1.1, ss = 1 + Math.random() * Math.min(3, s * 0.25);
+      sat += `<i style="position:absolute;left:${(s / 2 + Math.cos(a) * d - ss / 2).toFixed(1)}px;top:${(s / 2 + Math.sin(a) * d - ss / 2).toFixed(1)}px;width:${ss.toFixed(1)}px;height:${ss.toFixed(1)}px;animation-delay:.05s"></i>`;
+    }
+    el.innerHTML = `<i style="border-radius:${q()} ${q()} ${q()} ${q()}/${q()} ${q()} ${q()} ${q()}"></i>` + sat; splatBox.appendChild(el); SPL.push(el);
+    if (s > 7 && Math.random() < 0.5) { const d = 6 + Math.random() * 8; requestAnimationFrame(() => { el.style.setProperty('--d', d + 's'); el.style.transform = `translateY(${(14 + Math.random() * 40).toFixed(0)}px) scaleY(1.25)`; }); }
+    while (SPL.length > 60) SPL.shift().remove();
+  }
+  window.__splats = () => SPL.length;   // для tests/
   const mT = new THREE.Vector3();
   function menuPour(time) {
     if (!R) return;
-    menuStream.visible = menuLiq.visible = false;
+    menuStream.visible = false; splashDrops.forEach(d => d.visible = false);
     if (SEQ.on || (MF.lid < 0.02 && MF.V <= 0)) return;
     if (MF.V > MF.Va && MF.kind) { MF.vols[MF.kind] = (MF.vols[MF.kind] || 0) + MF.V - MF.Va; MF.Va = MF.V; }
     const sc = cup.group.scale.x, M = cup.stainU.uMark.value;
@@ -1386,9 +1456,37 @@ function makeBigCup(scene, pos) {
     let top = yTop, bot = Math.max(mT.y, yTop - 4.9 * (now - MF.t0) ** 2);
     if (MF.end > 0) { top = yTop - 4.9 * (now - MF.end) ** 2; if (top <= mT.y + 0.005) { MF.kind = null; return; } }
     if (top - bot < 0.005) return;
-    const L = LIQ[MF.kind], m = L.coffee ? menuStream : menuLiq, r = (L.coffee ? 0.018 : 0.022) * sc;
-    if (!L.coffee) liqMat.color.setHex(L.hex);
-    m.position.set(mT.x, top, mT.z); m.scale.set(r, top - bot, r); m.visible = true;
+    const L = LIQ[MF.kind], mat = L.water ? waterMat : L.coffee ? coffeeMat : liqMat;
+    const r0 = (L.coffee ? 0.022 : 0.03) * (L.thick || 1) * sc, len = top - bot, hit = MF.end < 0 && bot <= mT.y + 1e-4;
+    if (mat === liqMat) { liqMat.color.setHex(L.hex); liqMat.emissive.setHex(L.hex).multiplyScalar(0.3); }
+    menuStream.material = mat; SU.uLen.value = len; SU.uT.value = time; SU.uGlow.value = 0.3;
+    // ось: сверху вниз, лёгкое покачивание (две гармоники, к удару гаснет); радиус — сужение при разгоне
+    // (∝ (1 + 2gz/v0²)^−¼, как у струи налива) и утолщение у поверхности, пока бьёт
+    const pos = menuStream.geometry.attributes.position, uv = menuStream.geometry.attributes.uv;
+    for (let i = 0; i <= MSEG; i++) {
+      const u = i / MSEG, y = top - len * u, z = yTop - y, fade = Math.min(1, (y - mT.y) / (0.25 * sc) + 0.05);
+      const sw = (0.006 * Math.sin(time * 6.3 + y * 5) + 0.003 * Math.sin(time * 11.1 + y * 13)) * sc * Math.max(0, fade);
+      let rr = r0 * Math.pow(1 + 2 * 9.8 * z / 0.9, -0.25) * (1 + 0.04 * Math.sin(y * 40 - time * 25));
+      if (hit) rr *= 1 + 0.6 * Math.exp(-(y - mT.y) / (0.02 * sc));
+      if (MF.end > 0 && u < 0.08) rr *= Math.sqrt(u / 0.08);                      // оторвавшийся хвост закруглён
+      if (u > 0.94 && !hit) rr *= Math.sqrt(Math.max(0, (1 - u) / 0.06));        // летящий фронт закруглён
+      for (let j = 0; j <= MRAD; j++) {
+        const v = j / MRAD * Math.PI * 2, k = i * MCNT + j;
+        pos.setXYZ(k, mT.x + sw + rr * Math.cos(v), y, mT.z + rr * Math.sin(v)); uv.setXY(k, u, j / MRAD);
+      }
+    }
+    pos.needsUpdate = true; uv.needsUpdate = true; menuStream.geometry.computeVertexNormals(); menuStream.visible = true;
+    // брызги удара: капли выпрыгивают из места удара и падают обратно (по кругу, у каждой своя фаза)
+    if (hit) splashDrops.forEach((d, i) => {
+      const ph = ((time * 2.8 + i * 0.37) % 1), ang = i * 2.4 + Math.floor(time * 2.8 + i * 0.37) * 1.7, sp = (0.18 + 0.12 * ((i * 7) % 3)) * sc;
+      d.material = mat; d.visible = true; d.scale.setScalar(r0 * (0.35 + 0.15 * (i % 3)) * (1 - ph * 0.5));
+      d.position.set(mT.x + Math.cos(ang) * sp * ph * 0.35, mT.y + sp * ph - 1.6 * sc * ph * ph * 0.35, mT.z + Math.sin(ang) * sp * ph * 0.35);
+      if (d.position.y < mT.y) d.visible = false;
+    });
+    if (hit) {                                              // первый удар — горсть брызг, дальше по капле
+      if (!MF.hitOn) { MF.hitOn = true; for (let k = 0; k < 3; k++) splat(MF.kind, k === 0); MF.lastSplat = time; }
+      else if (time - (MF.lastSplat || 0) > 0.32) { splat(MF.kind, Math.random() < 0.15); MF.lastSplat = time; }
+    } else MF.hitOn = false;
   }
 
   const stageEl = document.querySelector('.menu .stage');
@@ -1757,6 +1855,33 @@ function makeBigCup(scene, pos) {
         onRefresh: self => { measure(); gsap.set(list, { y: yAt(self.progress * last) }); },
         onUpdate: self => { const f = self.progress * last; setY(yAt(f)); setItem(Math.round(f)); } });
       window.__menuPin = pin;   // для tests/
+      // Телефон: один свайп — один напиток (Томер 29.10: «чтобы на 5 позиций не крутануть, но и не задерживать»).
+      // Пока меню закреплено, касания перехватывает Observer: палец вверх — следующий, вниз — предыдущий, за жест —
+      // ровно один шаг; на краях списка жест уводит страницу дальше (к молоку / к наливу). Влетели в меню по инерции —
+      // инерция гасится на крайнем напитке (иначе смах пролетал весь список)
+      if (MOB && !REDUCED && lenis) {
+        const at = i => pin.start + (pin.end - pin.start) * i / last;
+        let done = false, lock = 0;
+        const step = dir => {
+          const now = performance.now(); if (done || now < lock) return; done = true; lock = now + 350;
+          const i = Math.round(pin.progress * last) + dir, out = i < 0 || i > last;
+          const y = i < 0 ? pin.start - innerHeight * 0.7 : i > last ? pin.end + innerHeight * 0.55 : at(i);
+          // lock: Lenis гасит свою анимацию от касаний — палец ещё двигается после шага, прокрутка вставала на полпути
+          lenis.scrollTo(y, { duration: out ? 0.8 : 0.55, easing: t => 1 - Math.pow(1 - t, 3), force: true, lock: true });
+        };
+        const obs = ScrollTrigger.observe({ target: window, type: 'touch', preventDefault: true, tolerance: 8, dragMinimum: 4,
+          onPress: () => { done = false; }, onUp: () => step(1), onDown: () => step(-1) });
+        obs.disable();
+        let lift = -9; addEventListener('touchend', () => { lift = performance.now(); }, { passive: true });
+        const halt = i => { if (performance.now() - lift > 1500) return;   // только инерция после пальца, не ссылка и не автопрокрутка
+          const html = document.documentElement; html.style.overflow = 'hidden';
+          requestAnimationFrame(() => { html.style.overflow = ''; lenis.scrollTo(at(i), { immediate: true, force: true }); }); };
+        ScrollTrigger.create({ trigger: '#menu', start: () => pin.start - 3, end: () => pin.end + 3,   // ровно на первом напитке — уже меню
+          // touch-action: браузер сам не листает (обработчик на окне он считает пассивным и preventDefault не слушает)
+          onToggle: st => { document.documentElement.classList.toggle('menu-lock', st.isActive); st.isActive ? obs.enable() : obs.disable(); },
+          onEnter: () => halt(0), onEnterBack: () => halt(last) });
+        window.__menuSwipe = obs;   // для tests/
+      }
       if (lenis && !MOB) {
         let tid = 0;
         lenis.on('scroll', () => {

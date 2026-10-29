@@ -134,6 +134,7 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .item p{grid-column:1/-1;color:rgba(239,230,220,.72);font-size:17px;max-width:40ch;margin-top:-8px}
 .menu .lead{font-size:20px;color:rgba(239,230,220,.75);max-width:30ch;margin-bottom:28px}
 .menu h2{font-size:clamp(40px,5vw,76px);margin-bottom:18px}
+.menu h2,.menu .lead{position:relative;z-index:3}   /* выше холста: струя налива падает с края экрана ЗА заголовком, а не по буквам (QA 30.10) */
 /* Десктоп: меню закреплено, список — барабан. Один напиток = 0.75 экрана прокрутки, после остановки прокрутка
    доводится до ближайшего напитка (Томер 25.10: полоборота колеса проматывало всё меню) */
 @media (min-width:821px){
@@ -749,30 +750,49 @@ function makeBigCup(scene, pos) {
   // камера неподвижна: смотрит на стакан. Кофе заполняет страницу слоем в экранных координатах.
   // облёт камеры на наливе: сверху должно быть видно ДНО — эспрессо льют первым, он на донышке; при 0.5 (компьютер) и
   // одном подъёме камеры (телефон) дно закрывала передняя стенка — кофе «не видно, наполняет одно молоко» (Томер 29.10)
-  const DESK_ORBIT = 0.78, MOB_ORBIT = 0.4, layCam = new THREE.PerspectiveCamera();
-  function placeCamera() {
-    // во время налива камера поднимается — смотрим на стакан чуть сверху и видим поверхность кофе внутри
-    // налив в меню: камера поднимается, чтобы смотреть в стакан сверху (иначе она ниже поверхности напитка и видна
-    // только задняя стенка над ним)
-    // компьютер: камеру не двигаем (стакан рос и съезжал) — там стакан сильнее наклоняется к зрителю (frame)
-    const cu = S.camUp, mv = window.__menuFill && MOBILE() ? __menuFill.view : 0, tg = new THREE.Vector3(0, 0.45 + 0.2 * cu + 0.4 * mv, 0);
-    cam.position.set(0, 0.55 + 0.9 * cu + 3.0 * mv, 6.2); cam.lookAt(tg);
-    cam.fov = MOBILE() ? 30 : 24; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
-    // раскладка (где стоит стакан на экране) считается по камере БЕЗ облёта: облёт идёт вокруг стакана, а место стакана
-    // бралось из камеры — петля, при крутом облёте на телефоне расходилась: стакан улетал за экран на кадр (29.10)
-    layCam.copy(cam); layCam.updateMatrixWorld();
-    // налив в меню: камера облетает стакан вверх вокруг его центра — стакан остаётся на той же точке
-    // экрана и того же размера, а в него видно сверху. Раньше только наклон стакана к зрителю (0.5): горизонтальная
-    // поверхность читалась тонкой полоской под кромкой, над ней — белая задняя стенка, стакан казался пустым (29.10)
-    const dv = window.__menuFill ? __menuFill.view : 0;
-    if (dv > 0 && cup) {
-      // пока налито мало — смотрим круче (до +0.3): дно с эспрессо не закрыто передней стенкой; наполняется — камера
-      // плавно возвращается (объём меняется твином, без рывков)
-      const low = 0.3 * (1 - Math.min(1, __menuFill.V / 0.6));
-      const P = cup.group.position, a = -((MOBILE() ? MOB_ORBIT : DESK_ORBIT) + low) * dv * dv * (3 - 2 * dv), ca = Math.cos(a), sa = Math.sin(a);
-      const rot = v => { const y = v.y - P.y, z = v.z - P.z; v.y = P.y + y * ca - z * sa; v.z = P.z + y * sa + z * ca; return v; };
-      rot(tg); rot(cam.position); cam.lookAt(tg); cam.updateMatrixWorld();
+  const DESK_ORBIT = 0.93, MOB_ORBIT = 0.58, layCam = new THREE.PerspectiveCamera();
+  // поза камеры для состояния налива (view — облёт 0..1, V — налито): ставит камеру c. Отдельной функцией — чтобы до
+  // начала налива пройти все ракурсы и поставить носик выше самого высокого края кадра (30.10: высота носика была
+  // числом, камеру подняли — край кадра ушёл выше носика, начало струи висело в воздухе)
+  function camPose(c, view, V, orbit) {
+    // во время налива первой секции камера поднимается — смотрим чуть сверху и видим поверхность кофе внутри;
+    // налив в меню (телефон): камера поднимается, чтобы смотреть в стакан сверху
+    const cu = S.camUp, mv = MOBILE() ? view : 0, tg = new THREE.Vector3(0, 0.45 + 0.2 * cu + 0.4 * mv, 0);
+    c.position.set(0, 0.55 + 0.9 * cu + 3.0 * mv, 6.2); c.lookAt(tg);
+    if (c.view) c.view.enabled = false;                      // сдвиг объектива — только поверх базовой камеры (ниже)
+    c.aspect = innerWidth / innerHeight; c.fov = MOBILE() ? 30 : 24; c.updateProjectionMatrix(); c.updateMatrixWorld();
+    if (!orbit || view <= 0 || !cup) return;
+    // налив в меню: камера облетает стакан вверх вокруг его центра — стакан остаётся на той же точке экрана и того же
+    // размера, а в него видно сверху. Раньше только наклон стакана к зрителю: горизонтальная поверхность читалась
+    // тонкой полоской под кромкой, стакан казался пустым (29.10). Пока налито мало — круче (до +0.3): дно с эспрессо
+    // не закрыто передней стенкой; наполняется — камера плавно возвращается
+    const low = 0.3 * (1 - Math.min(1, V / 0.6));
+    const P = cup.group.position, a = -((MOBILE() ? MOB_ORBIT : DESK_ORBIT) + low) * view * view * (3 - 2 * view), ca = Math.cos(a), sa = Math.sin(a);
+    const rot = v => { const y = v.y - P.y, z = v.z - P.z; v.y = P.y + y * ca - z * sa; v.z = P.z + y * sa + z * ca; return v; };
+    rot(tg); rot(c.position); c.lookAt(tg); c.updateMatrixWorld();
+    // компьютер: стакан справа от оси камеры — вертикальная струя в перспективе шла наискосок, «брошенной сбоку».
+    // Камера встаёт над линией стакана (сдвиг по x), кадр возвращается сдвигом объектива: стакан на той же точке
+    // экрана, струя — вертикаль экрана, как со штатива над стойкой (30.10)
+    if (!MOBILE()) {
+      const e = view * view * (3 - 2 * view), dx = P.x * e, v0 = P.clone().project(c).x;
+      c.position.x += dx; tg.x += dx; c.lookAt(tg); c.updateMatrixWorld();
+      const v1 = P.clone().project(c).x;
+      c.setViewOffset(innerWidth, innerHeight, (v1 - v0) * 0.5 * innerWidth, 0, innerWidth, innerHeight);
     }
+  }
+  function placeCamera() {
+    const M = window.__menuFill, view = M ? M.view : 0, V = M ? M.V : 0;
+    // раскладка (где стоит стакан на экране) — по камере БЕЗ облёта: облёт идёт вокруг стакана, а место стакана
+    // бралось из камеры — петля, при крутом облёте на телефоне расходилась: стакан улетал за экран на кадр (29.10)
+    camPose(layCam, view, V, false);
+    camPose(cam, view, V, true);
+  }
+  // высота носика над дном стакана (в масштабах стакана): выше верха кадра при любом ракурсе налива + запас
+  const tmpCam = new THREE.PerspectiveCamera();
+  function spoutHeight() {
+    const sc = cup.group.scale.x, P = cup.inner.getWorldPosition(new THREE.Vector3()); let top = -9;
+    for (const V of [0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95]) { camPose(tmpCam, 1, V, true); top = Math.max(top, screenToWorldY(-30, P.z, tmpCam)); }
+    return (top - P.y) / sc + 0.35;
   }
 
   // ── кофе, заполняющий страницу: тело гладкое, вся жизнь — на верхней границе ──
@@ -898,7 +918,7 @@ function makeBigCup(scene, pos) {
   const liqMat = R && new THREE.MeshPhysicalMaterial({ color: 0xf1ece4, roughness: 0.3, metalness: 0, sheen: 0.4, sheenColor: new THREE.Color(1, 1, 1), envMap: streamEnv, envMapIntensity: 0.6 });
   if (liqMat) liqMat.onBeforeCompile = sh => noGlow(sh);
   // вода: полупрозрачная с бликами (transmission не видит HTML-фон за холстом — струя выходила белой)
-  const waterMat = R && new THREE.MeshPhysicalMaterial({ color: 0xfff8f0, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.32, depthWrite: false, envMap: streamEnv, envMapIntensity: 2.6 });
+  const waterMat = R && new THREE.MeshPhysicalMaterial({ color: 0xfff8f0, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.5, depthWrite: false, envMap: streamEnv, envMapIntensity: 2.8 });
   if (waterMat) { waterMat.onBeforeCompile = sh => noGlow(sh); waterMat.customProgramCacheKey = () => 'water-stream'; }
   if (liqMat) liqMat.customProgramCacheKey = () => 'milk-stream';
   const MSEG = 64, MRAD = 14, MCNT = MRAD + 1;
@@ -913,7 +933,24 @@ function makeBigCup(scene, pos) {
     g.setIndex(idx);
     const m = new THREE.Mesh(g, coffeeMat); m.renderOrder = 2; m.frustumCulled = false; m.visible = false; scene.add(m); return m;
   })();
-  const menuLiq = menuStream;                               // одна сетка, материал — по жидкости
+  // две струи: хвост одной жидкости долетает, пока падает следующая (у каждой — свой материал, цвет по жидкости)
+  const menuStream2 = R && (() => { const m = new THREE.Mesh(menuStream.geometry.clone(), coffeeMat); m.renderOrder = 2; m.frustumCulled = false; m.visible = false; scene.add(m); return m; })();
+  const menuStreams = R ? [menuStream, menuStream2] : [];
+  // струя меню проявляется под шапкой и текстом (мягко, ~70 px), а не режет их от верхнего края экрана: шапка и
+  // заголовок лежат над холстом, струя шла по буквам (QA 30.10). Свой клон материала — у первой секции свои настройки
+  const FADE = { uFadeY: { value: 99 }, uFadeL: { value: 0.1 } };
+  const withFade = (base, key, glow) => { const m = base.clone(); m.transparent = true;
+    m.onBeforeCompile = sh => { base.onBeforeCompile(sh); Object.assign(sh.uniforms, FADE);
+      if (glow != null) sh.fragmentShader = sh.fragmentShader.replace('Tr * vec3(0.85, 0.45, 0.18) * uGlow', 'Tr * vec3(0.85, 0.45, 0.18) * uGlow * ' + glow.toFixed(2));
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFY = (modelMatrix * vec4(transformed, 1.0)).y;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFY; uniform float uFadeY, uFadeL;')
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\ngl_FragColor.a *= smoothstep(uFadeY, uFadeY - uFadeL, vFY);'); };
+    m.customProgramCacheKey = () => key; return m; };
+  // просвет эспрессо ×0.35: оранжевые прожилки по краю читались «огненным канатом» (QA 30.10)
+  const mCoffee = R && withFade(coffeeMat, 'menu-coffee', 0.35), mWater = R && withFade(waterMat, 'menu-water');
+  const mLiqs = R ? [withFade(liqMat, 'menu-milk-a'), withFade(liqMat, 'menu-milk-b')] : [];
+  const tailDrops = [];
+  if (R) for (let i = 0; i < 4; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), coffeeMat); d.visible = false; d.renderOrder = 2; d.frustumCulled = false; scene.add(d); tailDrops.push(d); }
   // брызги удара: мелкие капли выпрыгивают из места, где струя бьёт в поверхность, и падают обратно
   const splashDrops = [];
   if (R) for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), coffeeMat); d.visible = false; d.renderOrder = 2; scene.add(d); splashDrops.push(d); }
@@ -942,13 +979,13 @@ function makeBigCup(scene, pos) {
   // uMenu = 0 — поверхность прежняя (вершинные цвета)
   const SF = { uMenu: { value: 0 }, uT: { value: 0 }, uCen: { value: new THREE.Vector3() }, uRad: { value: 1 }, uImp: { value: new THREE.Vector2() },
     uPour: { value: 0 }, uSwirl: { value: 0 }, uUnder: { value: new THREE.Color() }, uSpot: { value: new THREE.Color() }, uRimC: { value: new THREE.Color() },
-    uSpotR: { value: 0 }, uIsl: { value: 0 }, uCrU: { value: 0 }, uCrS: { value: 0 }, uFoU: { value: 0 }, uFoS: { value: 0 }, uRim: { value: 0 } };
+    uSpotR: { value: 0 }, uPud: { value: 9 }, uSoft: { value: 0.1 }, uWave: { value: new THREE.Vector4() }, uIsl: { value: 0 }, uCrU: { value: 0 }, uCrS: { value: 0 }, uFoU: { value: 0 }, uFoS: { value: 0 }, uRim: { value: 0 } };
   if (surfMat) surfMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, SF);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      varying vec3 vSW; uniform float uMenu, uT, uRad, uPour, uSwirl, uSpotR, uIsl, uCrU, uCrS, uFoU, uFoS, uRim;
+      varying vec3 vSW; uniform vec4 uWave; uniform float uMenu, uT, uRad, uPour, uSwirl, uSpotR, uPud, uSoft, uIsl, uCrU, uCrS, uFoU, uFoS, uRim;
       uniform vec3 uCen, uUnder, uSpot, uRimC; uniform vec2 uImp;
       vec2 sh2(vec2 p){ p = vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
       float sn(vec2 x){ vec2 p=floor(x), w=fract(x), u=w*w*(3.0-2.0*w);
@@ -970,20 +1007,30 @@ function makeBigCup(scene, pos) {
       }
       vec2 surfQ(vec2 p){ float r = length(p), a = uSwirl * 0.3 / (0.35 + r); return mat2(cos(a), -sin(a), sin(a), cos(a)) * p; }
       float spotOf(vec2 p, vec2 q){
+        // край пятна: мягкость uSoft — молоко в кофе расходится облаками, а не «нашлёпкой» с ватным краем (QA 30.10)
         float e = sf(q * 2.6 + vec2(0.0, uT * 0.04)) - 0.5;
-        float d = length(p - uImp) + e * (0.28 + 0.4 * uIsl);
-        float s = 1.0 - smoothstep(uSpotR - 0.1, uSpotR + 0.05, d);
+        float d = length(p - uImp) + e * (0.28 + 0.4 * uIsl + 0.5 * uSoft);
+        float s = 1.0 - smoothstep(uSpotR - 0.1 - uSoft, uSpotR + 0.05 + 0.4 * uSoft, d);
+        s *= mix(1.0, 0.55 + 0.45 * smoothstep(0.3, 0.7, sf(q * 1.8 - uT * 0.05)), uSoft);
         // острова: льющееся рвёт верхний слой на клочья (вода в эспрессо — крема островами)
         return s * mix(1.0, smoothstep(0.26, 0.5, sf(q * 5.0 + 1.7)), uIsl);
       }
+      // волна от удара бежит наружу (0.55 радиуса/с) и несёт силу струи момента, когда родилась (uWave — расход сейчас,
+      // 0.3, 0.6, 0.9 с назад): струя кончилась — последние круги доходят до стенки и гаснут, а не исчезают
+      // штампом (QA 30.10: «круги одинаковые, не расходятся и не гаснут»). Под струёй — вмятина
+      float waveAmp(float rI){ float a = rI / 0.55;
+        return a < 0.3 ? mix(uWave.x, uWave.y, a / 0.3) : a < 0.6 ? mix(uWave.y, uWave.z, (a - 0.3) / 0.3)
+          : a < 0.9 ? mix(uWave.z, uWave.w, (a - 0.6) / 0.3) : uWave.w * max(0.0, 1.0 - (a - 0.9) / 0.5); }
       float spotH(vec2 p){ vec2 q = surfQ(p); float s = spotOf(p, q);
-        float rI = length(p - uImp), rip = sin(rI * 46.0 - uT * 11.0) * exp(-rI * 3.2) * uPour;
+        float rI = length(p - uImp), rip = sin(rI * 30.0 - uT * 16.5) * exp(-rI * 1.4) * waveAmp(rI) - 1.6 * exp(-rI * rI / 0.006) * uPour;
         float f = mix(uFoU, uFoS, s); vec2 b = bub(q * 8.0 + 4.0, 0.16, 0.12) * max(f, smoothstep(0.7, 0.95, length(p)));
         return rip * 0.004 + (b.y - b.x * 0.4) * 0.001 * (0.3 + f); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float sRough = roughness;
         if (uMenu > 0.5) {
           vec2 p = (vSW.xz - uCen.xz) / uRad, q = surfQ(p); float r = length(p);
+          // первые капли — лужица от места удара, растекается к стенкам (неровный край), а не сразу всё дно
+          if (uPud < 2.0 && length(p - uImp) > uPud * (1.0 + 0.18 * (sf(p * 3.0 + uT * 0.3) - 0.5))) discard;
           float s = spotOf(p, q);
           vec3 c = mix(uUnder, uSpot, s);
           // крема: тигровые разводы (вытянутая рябь по спирали) и тёмные «слёзы»
@@ -1505,7 +1552,7 @@ function makeBigCup(scene, pos) {
     shot: { c: [0.36, 0.2, 0.09], rim: [0.2, 0.1, 0.045], coffee: true, cr: 1, fo: 0.15 },          // эспрессо: сверху крема
     coffee: { c: [0.05, 0.025, 0.012], rim: [0.42, 0.25, 0.12], coffee: true, cr: 0.3 },
     coldbrew: { c: [0.035, 0.018, 0.01], rim: [0.16, 0.09, 0.05], coffee: true, cr: 0.15, fo: 0.1 },
-    water: { c: [0.06, 0.03, 0.014], top: 0.35, water: true, coffee: true, tint: 0.15, isl: 1 },      // вода темнеет от кофе, крема остаётся сверху
+    water: { c: [0.06, 0.03, 0.014], top: 0.35, water: true, coffee: true, tint: 0.22, isl: 0, soft: 0.15, float: 1.3 },      // вода темнеет от кофе, крема остаётся сверху
     milk: { c: [0.93, 0.9, 0.85], hex: 0xf1ece4, fo: 0.3, tint: 0.3 },
     foam: { c: [0.97, 0.95, 0.92], hex: 0xf7f3ec, top: 5, fo: 1, tint: 0.04, float: 1.4 },
     oat: { c: [0.9, 0.85, 0.76], hex: 0xece2d0, fo: 0.35, tint: 0.3 },
@@ -1544,8 +1591,14 @@ function makeBigCup(scene, pos) {
   // • толщина струи на высоте d под носиком — из неразрывности: πr²·v = Q, v = √(v0² + 2gd): у носика толще, внизу
   //   тоньше; на открытии и закрытии расход мал — фронт и хвост сами сужаются в нитку и рвутся на капли.
   const RATE = { shot: 0.11, coffee: 0.16, coldbrew: 0.17, water: 0.2, milk: 0.2, foam: 0.15, oat: 0.2, almond: 0.2, lactose: 0.2, matcha: 0.15, slush: 0.14, choc: 0.1 };
-  const RAMP_O = 0.15, RAMP_C = 0.3, GAP = 0.35;            // открыть, закрыть носик; пауза между разными жидкостями (хвост долетает)
-  const G_CUP = 9.8 / 0.12 * 0.985;                          // g в локальных единицах стакана (высота 0.985 ≈ 12 см); × масштаб → мир
+  // носик наклоняют быстро (0.06 с — голова струи сразу полной толщины, а не клином) и закрывают плавно (0.35 с — хвост
+  // сходит в нитку); следующая жидкость начинается, пока хвост прошлой ещё летит (две струи в воздухе — две сетки),
+  // а не после мёртвой паузы (QA 30.10: «0.7 с струи нет, поверхность замёрзла»)
+  const RAMP_O = 0.06, RAMP_C = 0.35, GAP = 0.12;
+  // Падение — в замедленной съёмке, как струя первой секции (g = 9.8 в мировых единицах, стакан ≈ 1): при честном g
+  // стакана 12 см фронт пролетал кадр за 0.2 с — струя «возникала целиком» и падала «тяжёлым грузом» (Томер 30.10).
+  // Толщина — из честной неразрывности (в замедленной съёмке расход и скорости делятся на одно число — сечение то же)
+  const G_SHOW = 9.8, V0_SHOW = 1.4, G_CUP = 9.8 / 0.12 * 0.985;
   // sg.ro — открытие: у продолжения из того же питчера (пена после молока) оно равно закрытию предыдущего и идёт
   // одновременно — расход перетекает, а не складывается (было: два носика сразу, всплеск ×1.6)
   const segFlow = (sg, t) => {                               // доля расхода 0..1 сегмента в момент t
@@ -1557,7 +1610,7 @@ function makeBigCup(scene, pos) {
     let v = sg.q * sg.ro / 2; const b = a - sg.ro; if (b < sg.L) return v + sg.q * b; v += sg.q * sg.L;
     const c = b - sg.L; return c < RAMP_C ? v + sg.q * (c - c * c / (2 * RAMP_C)) : v + sg.q * RAMP_C / 2; };
   const endOf = sg => sg.ts + sg.ro + sg.L + RAMP_C;
-  const mfReset = () => { MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; };
+  const mfReset = () => { MF.shotT = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; };
   // Выбор напитка — действием (Томер 29.10: «зачем наливать, если пользователь ничего не выбрал… пользователь должен
   // что-то нажать»): листание меняет напиток — стакан закрыт, оборот, новый рукав; налив — по кнопке «Налить» на
   // карточке («Заказать») или тапу по стакану. Автоналива нет (ни сразу, ни по остановке — это было в v50–v52)
@@ -1587,11 +1640,12 @@ function makeBigCup(scene, pos) {
     // расписание носика: молоко → пена — один питчер (рампы перекрываются, струя не прерывается); между разными
     // жидкостями — пауза, хвост успевает долететь. Расход подогнан так, что вылито ровно по рецепту
     tl.call(() => {
+      MF.spout = spoutHeight();
       let t = performance.now() / 1000 + 0.45, prev = 0, cont = false;
       MF.segs = rec.map(([kind, to], i) => {
         const ro = cont ? RAMP_C : RAMP_O, vol = to - prev, L = Math.max(0.05, vol / (RATE[kind] || 0.18) - (ro + RAMP_C) / 2);
         const sg = { kind, q: vol / (ro / 2 + L + RAMP_C / 2), L, ts: t, ro };
-        const next = rec[i + 1]; cont = !!next && kind === 'milk' && next[0] === 'foam';
+        const next = rec[i + 1]; cont = !!next && kind === 'milk' && next[0] === 'foam'; sg.contNext = cont;
         t = cont ? endOf(sg) - RAMP_C : endOf(sg) + GAP; prev = to; return sg;
       });
     }, null, 0);
@@ -1642,8 +1696,12 @@ function makeBigCup(scene, pos) {
   // как выглядит поверхность: то, что льют сейчас (или налили последним), — пятно от струи поверх уже налитого;
   // ширина пятна — от доли его объёма (пена всплывает и расходится шире); закрутка — набирается, пока бьёт струя,
   // и медленно гаснет
+  // цвет жидкости на поверхности: эспрессо сначала тёмный, как его струя, крема поднимается и светлеет за ~1.8 с
+  // (лужица сразу рыже-бежевая под тёмной струёй читалась подменой — QA 30.10)
+  const fresh = k => k === 'shot' && MF.shotT ? Math.min(1, (performance.now() / 1000 - MF.shotT) / 1.8) : 1;
+  const colOf = k => { const c = LIQ[k].c, f = fresh(k); return f >= 1 ? c : c.map((v, j) => [0.07, 0.035, 0.016][j] * (1 - f) + v * f); };
   const mixOf = (keys) => { const c = [0, 0, 0]; let W = 0;
-    for (const k of keys) { const w = MF.vols[k] * (LIQ[k].top || 1); W += w; for (let j = 0; j < 3; j++) c[j] += LIQ[k].c[j] * w; }
+    for (const k of keys) { const w = MF.vols[k] * (LIQ[k].top || 1), cc = colOf(k); W += w; for (let j = 0; j < 3; j++) c[j] += cc[j] * w; }
     return W > 0 ? c.map(v => v / W) : null; };
   function surfLook(time, col, rim, coffee) {
     const dt = Math.min(0.1, Math.max(0, time - (MF.lt || time))); MF.lt = time;
@@ -1656,13 +1714,25 @@ function makeBigCup(scene, pos) {
     MF.swR = hit ? Math.min(1.4, (MF.swR || 0) + dt * 1.5) : 0.05 + ((MF.swR || 0) - 0.05) * Math.exp(-dt / 2.2);
     MF.sw = (MF.sw || 0) + MF.swR * dt;
     SF.uMenu.value = 1; SF.uT.value = time; SF.uCen.value.copy(cen); SF.uRad.value = surfRad * 1.02;
-    SF.uPour.value += ((hit ? Math.min(1, (MF.flux || 0) / 0.15) : 0) - SF.uPour.value) * Math.min(1, dt / 0.25);
+    SF.uPour.value += ((hit ? Math.min(1, (MF.flux || 0) / 0.15) : 0) - SF.uPour.value) * Math.min(1, dt / 0.12);
+    // история расхода для бегущих кругов: сейчас, 0.3, 0.6, 0.9 с назад
+    (MF.fh = MF.fh || []).push([time, SF.uPour.value]); while (MF.fh.length > 2 && MF.fh[1][0] < time - 1.2) MF.fh.shift();
+    const fAt = T => { let v = 0; for (const [t, f] of MF.fh) { if (t > T) break; v = f; } return v; };
+    SF.uWave.value.set(fAt(time), fAt(time - 0.3), fAt(time - 0.6), fAt(time - 0.9));
+    if (MF.imp) SF.uImp.value.set((MF.imp[0] - cen.x) / (surfRad * 1.02), (MF.imp[1] - cen.z) / (surfRad * 1.02));
     SF.uSwirl.value = Math.min(MF.sw, 2.5);
-    const t = L.tint || 0, sp = L.c.map((v, j) => v * (1 - t) + under[j] * t);
+    if (MF.vols.shot > 0 && !MF.shotT) MF.shotT = performance.now() / 1000;
+    const t = L.tint || 0, sp = colOf(top).map((v, j) => v * (1 - t) + under[j] * t);
     SF.uSpot.value.setRGB(...sp); SF.uUnder.value.setRGB(...under);
     SF.uSpotR.value = vu < 0.004 ? 1.4 : Math.min(1.4, (L.float || 1.15) * Math.sqrt(vc / (vc + vu)));
     SF.uIsl.value = L.isl || 0;
-    SF.uCrS.value = L.cr || 0; SF.uFoS.value = L.fo || 0; SF.uCrU.value = LIQ[uL].cr || 0; SF.uFoU.value = LIQ[uL].fo || 0;
+    // мягкость края: молочное в кофейное и вода в эспрессо — смешиваются; пена и эспрессо по пене — пятном
+    const intoCoffee = LIQ[uL] && LIQ[uL].coffee && !LIQ[uL].water;
+    SF.uSoft.value = L.soft != null ? L.soft : (intoCoffee && !L.coffee ? 0.45 : 0.1);
+    // лужица: пока налито мало, жидкость лежит слоем ~1.5 мм — площадь = объём / толщина; дно покрыто — дальше уровень
+    const pud = Math.sqrt(MF.V * VFULL / 0.012 / Math.PI) / rIn(0.03);
+    SF.uPud.value = pud >= 1.05 ? 9 : pud * rIn(0.03) * cup.group.scale.x / (surfRad * 1.02);
+    SF.uCrS.value = (L.cr || 0) * fresh(top); SF.uFoS.value = L.fo || 0; SF.uCrU.value = (LIQ[uL].cr || 0) * fresh(uL); SF.uFoU.value = LIQ[uL].fo || 0;
     // мениск: у кофейных — светлая крема; если поверх кофе молочное — коричневое колечко у стенки (капучино)
     const anyCoffee = keys.some(k => LIQ[k].coffee && !LIQ[k].water);
     SF.uRimC.value.setRGB(...(coffee ? [0.42, 0.25, 0.12] : anyCoffee ? [0.3, 0.17, 0.08] : col.map(v => v * 0.86)));
@@ -1671,19 +1741,20 @@ function makeBigCup(scene, pos) {
   }
   function menuPour(time) {
     if (!R) return;
-    menuStream.visible = false; splashDrops.forEach(d => d.visible = false);
+    menuStreams.forEach(m => m.visible = false); tailDrops.forEach(d => d.visible = false); splashDrops.forEach(d => d.visible = false);
     if (SEQ.on || (MF.lid < 0.02 && MF.V <= 0)) return;
     const sc = cup.group.scale.x, M = cup.stainU.uMark.value, now = performance.now() / 1000;
     cup.inner.getWorldPosition(orgW);
-    // носик — над верхним краем кадра (по настоящей камере); падение — по g в масштабе стакана; v0 ≈ 0.4 м/с
-    const G = G_CUP * sc, V0 = 0.4 / 0.12 * 0.985 * sc, VW = VFULL * sc * sc * sc;   // VW — объём стакана в мире
+    // полёт — замедленный (G_SHOW); толщина — по честным g и v0 ≈ 0.4 м/с в масштабе стакана; VW — объём стакана в мире
+    const G = G_SHOW, V0 = V0_SHOW, GR = G_CUP * sc, VR0 = 0.4 / 0.12 * 0.985 * sc, VW = VFULL * sc * sc * sc;
     if (surface.visible) mT.copy(cen); else cup.inner.localToWorld(mT.set(0, 0.03, 0));
     // носик неподвижен (над дном стакана, в высотах стакана): камера на наливе едет, и носик «от верха кадра» ездил с
-    // ней — время полёта менялось, объём прыгал (0.62 → 0.81 за 0.2 с). Высота — выше верха кадра при любом ракурсе
-    // налива (замер: телефон до 4.45, компьютер до 2.9); сторож — test_menu_pour, «носик за кадром»
-    const yFrame = screenToWorldY(-30, mT.z, cam), ySrc = orgW.y + (MOBILE() ? 4.8 : 3.3) * sc;
+    // ней — время полёта менялось, объём прыгал (0.62 → 0.81 за 0.2 с). Высота — spoutHeight() в начале налива: выше
+    // верха кадра при любом ракурсе налива; сторож — test_menu_physics, «носик за кадром»
+    const yFrame = screenToWorldY(-30, mT.z, cam), ySrc = orgW.y + (MF.spout || 4.8) * sc;
     MF.spoutGap = Math.min(MF.spoutGap ?? 9, (ySrc - yFrame) / sc);   // для tests/: запас носика над кадром за налив
     const tau = d => (Math.sqrt(V0 * V0 + 2 * G * Math.max(0, d)) - V0) / G;           // время полёта на d под носиком
+    const fall = t => t <= 0 ? 0 : V0 * t + 0.5 * G * t * t;                           // и обратно: путь за время t
     if (MF.segs.length) {
       // в стакане — долетевшее: порция садится через τ после вылета (τ — до нынешней поверхности); объём не убывает
       const tS = tau(ySrc - mT.y), vols = {}; let V = 0;
@@ -1715,48 +1786,87 @@ function makeBigCup(scene, pos) {
       const m = cup.mouthWorld(new THREE.Vector3()), f = m.clone().addScaledVector(d, -rIn(0.985) * sc).project(cam); MF.dbg.rimY = (0.5 - f.y * 0.5) * innerHeight; }
     // мокрый след — только под жидкостью, не выше: у молочных «кофейный» след у линии давал коричневое кольцо (29.10)
     M.fill(Math.max(0, h - 0.04)); cup.stainU.uWet.value = 0;
-    // струя: точки по высоте от верха кадра до поверхности; в каждой — порция, вылетевшая τ(d) назад: её расход даёт
-    // толщину (неразрывность), её жидкость — материал. Нет расхода — нет струи: фронт, хвост и паузы получаются сами
-    MF.hit = false; MF.kind = null;
+    // Струя. Каждая порция вылетает из носика в момент te и падает; точка на глубине d под носиком — порция, вылетевшая
+    // τ(d) назад: её расход — толщина (неразрывность), её жидкость — материал. Группа — непрерывный налив одного
+    // питчера (молоко → пена — одна группа); у каждой группы своя сетка: хвост эспрессо долетает, пока падает молоко.
+    // • голова: первые порции несут полный расход (питчер наклонили), фронт закруглён и чуть толще — капля-голова;
+    // • покачивание: рука чуть водит носиком — у каждой порции своя малая боковая скорость, отклонение растёт с
+    //   полётом, узор едет вниз вместе с жидкостью (струя не «палка», QA 30.10);
+    // • хвост: расход сходит на нет — струя тоньше до нитки, нитка отрывается сверху и падает, следом две капли
+    //   (бусин нет: «разрыв капель не нравится» — Томер 26.10, первая секция)
+    MF.hit = false; MF.kind = null; MF.flux = 0;
+    menuStreams.forEach(m => m.visible = false); tailDrops.forEach(d => d.visible = false);
     if (!MF.segs.length) return;
-    const dTop = Math.max(0, ySrc - yFrame), dBot = ySrc - mT.y;                      // струя видна от верха кадра
-    const qAt = te => { let q = 0, k = null, best = 0; for (const sg of MF.segs) { const f = segFlow(sg, te) * sg.q; q += f; if (f > best) { best = f; k = sg.kind; } } return [q, k]; };
-    const rOfQ = (q, d) => Math.sqrt(q * VW / (Math.PI * Math.sqrt(V0 * V0 + 2 * G * d)));
-    const [qHit, kHit] = qAt(now - tau(dBot));
-    MF.hit = qHit > 0.004; MF.flux = qHit; if (MF.hit) MF.kind = kHit;
-    // материал — по жидкости в полёте (разные жидкости разведены паузой: в полёте одна)
-    let kFly = null, qMax = 0;
-    for (let i = 0; i <= 8; i++) { const [q, k] = qAt(now - tau(dTop + (dBot - dTop) * i / 8)); if (q > qMax) { qMax = q; kFly = k; } }
-    if (!kFly) return;
-    const L = LIQ[kFly], mat = L.water ? waterMat : L.coffee ? coffeeMat : liqMat;
-    if (mat === liqMat) { liqMat.color.setHex(L.hex); liqMat.emissive.setHex(L.hex).multiplyScalar(0.3); }
-    menuStream.material = mat; SU.uLen.value = dBot - dTop; SU.uT.value = time; SU.uGlow.value = 0.3;
-    const qN = RATE[kFly] || 0.18, rMin = 0.0015 * sc;
-    const pos = menuStream.geometry.attributes.position, uv = menuStream.geometry.attributes.uv;
-    let rBot = 0;
-    for (let i = 0; i <= MSEG; i++) {
-      const u = i / MSEG, d = dTop + (dBot - dTop) * u, y = ySrc - d, te = now - tau(d), q = qAt(te)[0];
-      let rr = q > 1e-4 ? rOfQ(q, d) * (L.thick || 1) : 0;
-      // слабый расход (носик открывают, закрывают) — струя рвётся на бусины (неустойчивость Плато–Рэлея): узор едет
-      // вместе с порциями (фаза от времени вылета) и растягивается при разгоне
-      const weak = Math.max(0, 1 - q / (0.45 * qN));
-      if (weak > 0) rr *= Math.max(0, 1 + 0.9 * weak * Math.sin(te * 70));
-      if (rr < rMin) rr = 0;
-      if (i === MSEG) rBot = rr;
-      if (MF.hit) rr *= 1 + 0.35 * Math.exp(-(y - mT.y) / (0.015 * sc));      // удар: жидкость чуть копится у поверхности
-      const sw = (0.004 * Math.sin(time * 6.3 + d * 5) + 0.002 * Math.sin(time * 11.1 + d * 13)) * sc * Math.min(1, Math.max(0, (y - mT.y) / (0.2 * sc)));
-      for (let j = 0; j <= MRAD; j++) {
-        const v = j / MRAD * Math.PI * 2, k = i * MCNT + j;
-        pos.setXYZ(k, mT.x + sw + rr * Math.cos(v), y, mT.z + rr * Math.sin(v)); uv.setXY(k, u, j / MRAD);
+    const dTop = Math.max(0, ySrc - yFrame), dBot = ySrc - mT.y;
+    // где струе проявляться: под шапкой; на телефоне — под подписью меню, если она над стаканом
+    { let px = (document.querySelector('.nav') || { getBoundingClientRect: () => ({ bottom: 60 }) }).getBoundingClientRect().bottom + 8;
+      const lead = document.querySelector('.menu .lead'), cupTop = mT.clone().project(cam);
+      if (MOBILE() && lead) { const b = lead.getBoundingClientRect().bottom + 10; if (b < (0.5 - cupTop.y * 0.5) * innerHeight - 60) px = Math.max(px, b); }
+      const yA = screenToWorldY(px, mT.z, cam), yB = screenToWorldY(px + 70, mT.z, cam);
+      FADE.uFadeY.value = yA; FADE.uFadeL.value = Math.max(1e-3, yA - yB); }
+    const groups = []; MF.segs.forEach((sg, i) => { if (i && MF.segs[i - 1].contNext) groups[groups.length - 1].push(sg); else groups.push([sg]); });
+    const qOf = (grp, te) => { let q = 0, k = grp[0].kind, best = -1;
+      for (const sg of grp) { let f = segFlow(sg, te); if (sg === grp[0] && te - sg.ts >= 0 && te - sg.ts < RAMP_O) f = 1;   // голова — полный расход
+        f *= sg.q; q += f; if (f > best) { best = f; k = sg.kind; } } return [q, k]; };
+    const swA = MOBILE() ? 1.6 : 1;                                                    // на телефоне струя читалась «палкой»
+    const sway = te => [0.08 * swA * sc * (Math.sin(te * 1.9) + 0.5 * Math.sin(te * 4.7 + 1.3)), 0.06 * swA * sc * (Math.sin(te * 1.4 + 2.1) + 0.4 * Math.sin(te * 3.6))];
+    const rOfQ = (q, d) => Math.sqrt(q * VW / (Math.PI * Math.sqrt(VR0 * VR0 + 2 * GR * d)));   // честная скорость на пути d (путь тот же, время — замедленное)
+    let impX = mT.x, impZ = mT.z, kHit = null, rHit = 0;
+    groups.forEach((grp, gi) => {
+      const t0 = grp[0].ts, t1 = endOf(grp[grp.length - 1]);
+      const dFront = fall(now - t0), dTail = now > t1 ? fall(now - t1) : 0;          // фронт (первая порция) и хвост (последняя)
+      const d0 = Math.max(dTop, dTail), d1 = Math.min(dBot, dFront);
+      if (d1 - d0 < 1e-4) return;
+      const mesh = menuStreams[gi % menuStreams.length], kMid = qOf(grp, now - tau((d0 + d1) / 2))[1] || grp[0].kind;
+      const L = LIQ[kMid], qN = RATE[kMid] || 0.18;
+      const mat = L.water ? mWater : L.coffee ? mCoffee : mLiqs[gi % mLiqs.length];
+      if (!L.water && !L.coffee) { mat.color.setHex(L.hex); mat.emissive.setHex(L.hex).multiplyScalar(0.3); }
+      mesh.material = mat;
+      const thick = (L.thick || 1) * (MOBILE() ? 1.3 : 1);                         // телефон: стакан мелкий — нитка в 3 px
+      const landed = dFront >= dBot, rFull = rOfQ(grp[0].q, d1) * thick;
+      const pos = mesh.geometry.attributes.position, uv = mesh.geometry.attributes.uv;
+      let rEnd = 0;
+      for (let i = 0; i <= MSEG; i++) {
+        const u = i / MSEG, d = d0 + (d1 - d0) * u, te = now - tau(d), [q] = qOf(grp, te);
+        let rr = q > 1e-4 ? rOfQ(q, d) * thick : 0;
+        if (!landed) {                                                                 // голова: закруглённая капля, чуть толще
+          const sF = (d1 - d) / Math.max(1e-4, rFull * 1.3);
+          rr *= sF < 1 ? Math.sqrt(Math.max(0, 1 - (1 - sF) * (1 - sF))) * 1.05 : 1 + 0.05 * Math.exp(-(sF - 1) * 0.8);
+        }
+        if (now > t1 && u < 0.06) rr *= Math.sqrt(u / 0.06);                          // оторванная нитка закруглена сверху
+        if (landed && i === MSEG) rEnd = rr;
+        if (landed && !L.water) rr *= 1 + 0.3 * Math.exp(-(ySrc - d - mT.y) / (0.015 * sc));   // удар: жидкость чуть копится (у прозрачной воды читалась «набалдашником»)
+        const tf = now - te, [sx, sz] = sway(te), y = ySrc - d;
+        for (let j = 0; j <= MRAD; j++) {
+          const v = j / MRAD * Math.PI * 2, k = i * MCNT + j;
+          pos.setXYZ(k, mT.x + sx * tf + rr * Math.cos(v), y, mT.z + sz * tf + rr * Math.sin(v)); uv.setXY(k, u, j / MRAD);
+        }
       }
-    }
-    pos.needsUpdate = true; uv.needsUpdate = true; menuStream.geometry.computeVertexNormals(); menuStream.visible = true;
-    const hit = MF.hit && rBot > 0, r0 = rBot || rOfQ(qN, dBot);
-    // брызги удара: капли выпрыгивают из места удара и падают обратно (по кругу, у каждой своя фаза)
+      pos.needsUpdate = true; uv.needsUpdate = true; mesh.geometry.computeVertexNormals(); mesh.visible = true;
+      SU.uLen.value = d1 - d0; SU.uT.value = time; SU.uGlow.value = 0.3;
+      if (landed) {
+        const teH = now - tau(dBot), [qh, kh] = qOf(grp, teH), [sx, sz] = sway(teH), tfH = now - teH;
+        if (qh > 0.004 && qh > MF.flux) { MF.flux = qh; kHit = kh; rHit = rEnd; impX = mT.x + sx * tfH; impZ = mT.z + sz * tfH; MF.hitMat = mat; }
+      }
+      // хвост: две капли срываются с носика после нитки и падают той же дорогой
+      // (пошла следующая жидкость — капли прошлой летят внутри её струи и не видны: тёмные точки на белом молоке)
+      const nextG = groups[gi + 1];
+      if (now > t1 && !(nextG && now > nextG[0].ts)) [0.18, 0.4].forEach((dt, j) => {
+        const dd = fall(now - t1 - dt), dr = tailDrops[(gi * 2 + j) % tailDrops.length];
+        if (dd < dTop || dd > dBot) return;
+        const [sx, sz] = sway(t1 + dt), tf = now - t1 - dt;
+        dr.material = mat; dr.visible = true; dr.scale.set(1, 1.3, 1).multiplyScalar(Math.max(0.004 * sc, rOfQ(qN * 0.15, dd)) * (1.6 - 0.4 * j));
+        dr.position.set(mT.x + sx * tf, ySrc - dd, mT.z + sz * tf);
+      });
+    });
+    MF.hit = MF.flux > 0.004; if (MF.hit) MF.kind = kHit;
+    MF.imp = [impX, impZ];                                                             // точка удара — для кругов на поверхности
+    const hit = MF.hit, r0 = rHit || 0.01 * sc, mat = MF.hitMat || coffeeMat;
+    // брызги удара: капли выпрыгивают из места удара и падают обратно (по кругу, у каждой своя фаза); размер — от струи
     if (hit) splashDrops.forEach((d, i) => {
       const ph = ((time * 2.8 + i * 0.37) % 1), ang = i * 2.4 + Math.floor(time * 2.8 + i * 0.37) * 1.7, sp = (0.18 + 0.12 * ((i * 7) % 3)) * sc;
       d.material = mat; d.visible = true; d.scale.setScalar(r0 * (0.35 + 0.15 * (i % 3)) * (1 - ph * 0.5));
-      d.position.set(mT.x + Math.cos(ang) * sp * ph * 0.35, mT.y + sp * ph - 1.6 * sc * ph * ph * 0.35, mT.z + Math.sin(ang) * sp * ph * 0.35);
+      d.position.set(impX + Math.cos(ang) * sp * ph * 0.35, mT.y + sp * ph - 1.6 * sc * ph * ph * 0.35, impZ + Math.sin(ang) * sp * ph * 0.35);
       if (d.position.y < mT.y) d.visible = false;
     });
     // брызги на стекло — только когда струя бьёт у самой кромки (поверхность ближе 0.25 высоты до неё)
@@ -1821,7 +1931,7 @@ function makeBigCup(scene, pos) {
     const stR = m && prog > 0.9 ? stageEl.getBoundingClientRect() : null;
     const onStage = !!stR && stR.bottom > -40 && stR.top < innerHeight + 40;
     // на наливе камера смотрит сверху — дно стакана уходит ниже; приподнимаем, чтобы не наезжал на название напитка
-    if (onStage) { sx = 0; sc = 0.66; sy = screenToWorldY(stR.bottom - stR.height * (0.04 + 0.16 * MF.view)); yaw = FACE(0); pitch = 0.06; }
+    if (onStage) { sx = 0; sc = 0.66; sy = screenToWorldY(stR.bottom - stR.height * (0.04 + 0.16 * MF.view)); yaw = FACE(0); pitch = 0.06 * (1 - MF.view); }
     // телефон после меню: стакан в ближайшем «месте» (не на сцене меню)
     SPOT.on = false;
     if (m && prog > 0.9 && !onStage) {
@@ -1831,12 +1941,15 @@ function makeBigCup(scene, pos) {
         const jump = SPOT.el !== tg.el && !SPOT.was;                  // появились — сразу на месте, без пролёта
         const k = jump ? 1 : 1 - Math.exp(-sdt / 0.3);
         SPOT.x += (tx - SPOT.x) * k; SPOT.y += (ty - SPOT.y) * k; SPOT.s += (s0 - SPOT.s) * k; SPOT.el = tg.el;
-        sx = SPOT.x; sy = SPOT.y; sc = SPOT.s; yaw = FACE(sx) + 0.25 * Math.sin(time * 0.4) + (tx - SPOT.x) * 1.5; pitch = 0.06; SPOT.on = true;
+        sx = SPOT.x; sy = SPOT.y; sc = SPOT.s; yaw = FACE(sx) + 0.25 * Math.sin(time * 0.4) + (tx - SPOT.x) * 1.5; pitch = 0.06 * (1 - MF.view); SPOT.on = true;
       }
       SPOT.was = !!tg;
     } else SPOT.was = false;
     SPOT.t = time;
-    pitch += (m ? 0.18 : 0.15) * MF.view;                // налив в меню: стакан к зрителю — видно поверхность (камера ещё и сверху)
+    // налив в меню: стакан стоит ровно, как на стойке (поверхность видно — камера облетает сверху; и базовый наклон 0.06
+    // на телефоне к наливу уходит в 0 — даже 3° давали первым каплям клин с прямым краем, QA 30.10). Наклон к зрителю
+    // (0.15–0.18) остался от времени без облёта: на дне наклонённого стакана первые капли собирались клином у передней
+    // стенки — полоса с ровным краем вместо лужицы от удара (30.10)
     const g = cup.group;
     g.position.set(sx, sy + S.lift + Math.sin(time * 1.1) * 0.025 * idle * calm, 0);
     g.scale.setScalar(sc);

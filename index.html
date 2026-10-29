@@ -96,12 +96,14 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 /* меню на кофе */
 .menu{background:var(--coffee);color:var(--foam);position:relative}
 /* брызги налива: капли «прилипают» по краям экрана меню, цвета жидкости, копятся; под текстом */
-.splats{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.splats{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:4}   /* «на стекле» экрана: держатся при любой прокрутке */
 .menu .wrap{position:relative;z-index:1}
-.splat{position:absolute;width:var(--s);height:var(--s);transition:transform var(--d,0s) cubic-bezier(.5,0,.8,.6) .5s}
-.splat i{display:block;width:100%;height:100%;opacity:.92;border-radius:50% 50% 48% 52%/55% 55% 45% 45%;transform:scale(0);animation:splat-in .3s cubic-bezier(.3,1.7,.5,1) forwards;
-  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,var(--h,.6)) 0 11%,transparent 14%),radial-gradient(circle at 50% 58%,var(--c) 0 58%,var(--e) 100%);box-shadow:0 1px 1.5px rgba(0,0,0,.28)}
+.splat i+i{transform:scale(0);animation:splat-in .25s cubic-bezier(.3,1.7,.5,1) forwards}
 @keyframes splat-in{to{transform:scale(1)}}
+.splat{position:absolute;width:var(--s);height:var(--s);transition:transform var(--d,0s) cubic-bezier(.5,0,.8,.6) .5s}
+.splat i{display:block;width:100%;height:100%;opacity:.92;border-radius:50% 50% 48% 52%/55% 55% 45% 45%;
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,var(--h,.6)) 0 11%,transparent 14%),radial-gradient(circle at 50% 58%,var(--c) 0 58%,var(--e) 100%);box-shadow:0 1px 1.5px rgba(0,0,0,.28)}
+.splat i+i{animation-delay:.36s}
 @media (prefers-reduced-motion:reduce){.splats{display:none}}
 /* телефон: пока меню на экране, листает страница (один свайп — один напиток), не браузер */
 html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
@@ -110,6 +112,12 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:24px;padding:7vh 0;opacity:.35;transition:opacity .4s}
 .item+.item{border-top:1px solid rgba(239,230,220,.14)}
 .item.on{opacity:1}
+/* выбор напитка: остановился — под ним заполняется полоска (~1.6 с), дошла — наливаем; пролистал раньше — не наливаем */
+.item{position:relative}
+.item::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--foam);transform:scaleX(0);transform-origin:left;opacity:0;pointer-events:none}
+.item.arm::after{opacity:.85;transform:scaleX(1);transition:transform 1.6s linear,opacity .2s}
+.item.poured::after{opacity:0;transform:scaleX(1);transition:opacity .8s}
+.menu{cursor:default}
 .item h3{font-size:clamp(34px,4.2vw,62px)}
 .item .price{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
 .item p{grid-column:1/-1;color:rgba(239,230,220,.72);font-size:17px;max-width:40ch;margin-top:-8px}
@@ -222,7 +230,6 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
   </section>
 
   <section class="menu" id="menu">
-    <div class="splats" aria-hidden="true"></div>
     <div class="wrap">
       <div>
         <h2 data-split>Что пьём сегодня</h2>
@@ -282,6 +289,7 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
     </div>
   </section>
 </main>
+<div class="splats" aria-hidden="true"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
@@ -1371,23 +1379,34 @@ function makeBigCup(scene, pos) {
   const MF = { lid: 0, view: 0, V: 0, Va: 0, vols: {}, kind: null, t0: 0, end: -1, tl: null, label: null };
   window.__menuFill = MF;   // для tests/
   const MRATE = 0.24, MFALL = 0.45;                         // объём в секунду (стакан ~3 с); струя долетает за ~0.45 с
-  function menuDrink(label) {
-    if (MF.tl) MF.tl.kill();
-    MF.label = label || null;
-    const rec = label && RECIPES[label], tl = MF.tl = gsap.timeline();
-    if (REDUCED) {                                          // без движения: сразу готовый напиток
-      MF.kind = null; MF.end = -1; MF.vols = {}; MF.V = MF.Va = 0; MF.lid = MF.view = rec ? 1 : 0;
-      if (rec) { let prev = 0; for (const [k, to] of rec) { MF.vols[k] = to - prev; prev = to; } MF.V = MF.Va = prev; }
-      return;
+  // Выбор напитка (Томер 29.10: «не успеваю выбрать, а он уже всё наливает»): листаешь — стакан закрыт, меняет только
+  // рукав (оборот); остановился на напитке — под ним заполняется полоска (MARM с), дошла — крышку снимают и наливают
+  // именно его; тап по меню — наливает сразу. Пролистал раньше — не наливается
+  const MARM = 1.6, MSPIN = 1.3;
+  function menuPrep(label) {
+    if (MF.tl) MF.tl.kill(); if (MF.arm) MF.arm.kill();
+    MF.label = label || null; MF.poured = false; MF.turnAt = performance.now() / 1000;
+    const tl = MF.tl = gsap.timeline();
+    if (REDUCED) { MF.kind = null; MF.end = -1; MF.vols = {}; MF.V = MF.Va = 0; MF.lid = MF.view = 0; return; }
+    if (MF.lid > 0 || MF.V > 0) {
+      tl.to(MF, { lid: 0, view: 0, duration: 0.3, ease: 'power2.in' }, 0);
+      tl.call(() => { MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.end = -1; }, null, 0.6);   // середина оборота — новый стакан
     }
-    tl.to(MF, { lid: 0, view: 0, duration: 0.3, ease: 'power2.in' }, 0);
-    tl.call(() => { MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.end = -1; }, null, 0.6);   // середина оборота — новый стакан
-    if (!rec) return;
-    tl.to(MF, { lid: 1, view: 1, duration: 0.6, ease: 'power2.inOut' }, 1.3);
-    // молоко → пена — один питчер: струя не прерывается (была пустая секунда между шагами); между разными
-    // жидкостями — короткая пауза: хвост одной оторвался, следующая уже падает
+    if (label && RECIPES[label]) { MF.arm = gsap.delayedCall(MARM, () => menuFill(label)); window.dispatchEvent(new CustomEvent('menuarm')); }
+  }
+  function menuFill(label) {
+    if (!label || MF.label !== label || MF.poured || !RECIPES[label]) return;
+    if (MF.arm) MF.arm.kill(); MF.poured = true;
+    window.dispatchEvent(new CustomEvent('menupour', { detail: label }));
+    const rec = RECIPES[label];
+    if (REDUCED) { let prev = 0; MF.vols = {}; for (const [k, to] of rec) { MF.vols[k] = to - prev; prev = to; } MF.V = MF.Va = prev; MF.lid = MF.view = 1; return; }
+    if (MF.tl) MF.tl.kill();
+    const tl = MF.tl = gsap.timeline({ delay: Math.max(0, MF.turnAt + MSPIN - performance.now() / 1000) });   // оборот докрутится
+    tl.call(() => { MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.end = -1; }, null, 0);
+    tl.to(MF, { lid: 1, view: 1, duration: 0.6, ease: 'power2.inOut' }, 0);
+    // молоко → пена — один питчер: струя не прерывается; между разными жидкостями — хвост успевает упасть
     const same = (a, b) => a === 'milk' && b === 'foam';
-    let t = 1.75, prev = 0;
+    let t = 0.45, prev = 0;
     rec.forEach(([kind, to], i) => {
       const dur = (to - prev) / MRATE, cont = i > 0 && same(rec[i - 1][0], kind), last = i === rec.length - 1 || !same(kind, rec[i + 1][0]);
       if (cont) tl.call(() => { MF.kind = kind; }, null, t);
@@ -1398,29 +1417,37 @@ function makeBigCup(scene, pos) {
       prev = to;
     });
   }
-  // брызги по краям экрана: пока струя бьёт в стакан, по краям прилипают капли её цвета (Томер 29.10: «брызги,
-  // которые оседают по краям, чтобы фон не был пустым»); некоторые медленно сползают; копятся, до 60 штук
-  const splatBox = document.querySelector('.menu .splats'), SPL = [];
+  window.__menuFillNow = () => menuFill(MF.label);   // для tests/
+  // брызги «на стекле» экрана: капля вылетает из стакана (видно, откуда взялась) и прилипает к краю — только когда
+  // стакан почти полон и струя бьёт у самой кромки (раньше летели с первой секунды, когда кофе бил в дно — Томер
+  // 29.10: «непонятно, от чего появляются»). Слой фиксирован: держатся при любой прокрутке, как потёки; стираются
+  // обновлением страницы или возвратом в самый верх. Некоторые медленно сползают; до 60 штук
+  const splatBox = document.querySelector('.splats'), SPL = [];
   const SPLAT_C = { shot: ['#5a3218', '#25120a', .55], coffee: ['#3a1d0e', '#160a04', .55], coldbrew: ['#2a150b', '#100703', .5], water: ['rgba(255,250,240,.16)', 'rgba(255,250,240,.42)', .8],
     milk: ['#f3eee6', '#cfc6b8', .7], foam: ['#f8f5ef', '#d8d0c3', .7], oat: ['#ece2d0', '#c7b9a0', .7], matcha: ['#7fa63a', '#46651a', .55], slush: ['#a8805c', '#6a4b31', .55] };
-  function splat(kind, big) {
+  function splat(kind, big, ox, oy) {
     if (!splatBox || REDUCED) return;
-    const r = splatBox.getBoundingClientRect(), side = Math.random() < 0.5, W = r.width, H = innerHeight;
-    const x = (side ? 0.015 + Math.random() * 0.12 : 0.865 + Math.random() * 0.12) * W, y = -r.top + H * (0.06 + Math.random() * 0.88);
+    const side = ox > innerWidth / 2 ? Math.random() < 0.7 : Math.random() < 0.3, W = innerWidth, H = innerHeight;
+    const x = (side ? 0.865 + Math.random() * 0.12 : 0.015 + Math.random() * 0.12) * W, y = H * (0.12 + Math.random() * 0.82);
     const s = (big ? 9 : 3) + Math.random() * (big ? 8 : 7), [c, e, hl] = SPLAT_C[kind] || SPLAT_C.coffee;
     const el = document.createElement('div'); el.className = 'splat';
     el.style.cssText = `left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;--s:${s.toFixed(1)}px;--c:${c};--e:${e};--h:${hl}`;
     // форма неровная (свой радиус у каждого угла), вокруг — 2–4 капельки-спутника в сторону разлёта
-    const q = () => (40 + Math.random() * 20).toFixed(0) + '%', dir = Math.random() * Math.PI * 2;
+    const q = () => (40 + Math.random() * 20).toFixed(0) + '%', dir = Math.atan2(y - oy, x - ox);
     let sat = '';
     for (let k = 0, n = 2 + Math.floor(Math.random() * 3); k < n; k++) {
       const d = s * (0.8 + Math.random() * 1.4), a = dir + (Math.random() - 0.5) * 1.1, ss = 1 + Math.random() * Math.min(3, s * 0.25);
-      sat += `<i style="position:absolute;left:${(s / 2 + Math.cos(a) * d - ss / 2).toFixed(1)}px;top:${(s / 2 + Math.sin(a) * d - ss / 2).toFixed(1)}px;width:${ss.toFixed(1)}px;height:${ss.toFixed(1)}px;animation-delay:.05s"></i>`;
+      sat += `<i style="position:absolute;left:${(s / 2 + Math.cos(a) * d - ss / 2).toFixed(1)}px;top:${(s / 2 + Math.sin(a) * d - ss / 2).toFixed(1)}px;width:${ss.toFixed(1)}px;height:${ss.toFixed(1)}px"></i>`;
     }
     el.innerHTML = `<i style="border-radius:${q()} ${q()} ${q()} ${q()}/${q()} ${q()} ${q()} ${q()}"></i>` + sat; splatBox.appendChild(el); SPL.push(el);
-    if (s > 7 && Math.random() < 0.5) { const d = 6 + Math.random() * 8; requestAnimationFrame(() => { el.style.setProperty('--d', d + 's'); el.style.transform = `translateY(${(14 + Math.random() * 40).toFixed(0)}px) scaleY(1.25)`; }); }
+    // полёт из стакана по дуге и шлепок о стекло (сплющилась и выпрямилась)
+    const dx = ox - x, dy = oy - y;
+    el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(.25)` }, { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 60}px) scale(.55)`, offset: 0.5 },
+      { transform: 'translate(0, 0) scale(1.3, .75)', offset: 0.88 }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,.5,.4,1)' });
+    if (s > 7 && Math.random() < 0.5) setTimeout(() => { el.style.setProperty('--d', (6 + Math.random() * 8) + 's'); el.style.transform = `translateY(${(14 + Math.random() * 40).toFixed(0)}px) scaleY(1.25)`; }, 500);
     while (SPL.length > 60) SPL.shift().remove();
   }
+  gsap.ticker.add(() => { if (SPL.length && scrollY < 40) { SPL.forEach(el => el.remove()); SPL.length = 0; } });   // вернулись в самый верх — стекло чистое
   window.__splats = () => SPL.length;   // для tests/
   const mT = new THREE.Vector3();
   function menuPour(time) {
@@ -1483,10 +1510,10 @@ function makeBigCup(scene, pos) {
       d.position.set(mT.x + Math.cos(ang) * sp * ph * 0.35, mT.y + sp * ph - 1.6 * sc * ph * ph * 0.35, mT.z + Math.sin(ang) * sp * ph * 0.35);
       if (d.position.y < mT.y) d.visible = false;
     });
-    if (hit) {                                              // первый удар — горсть брызг, дальше по капле
-      if (!MF.hitOn) { MF.hitOn = true; for (let k = 0; k < 3; k++) splat(MF.kind, k === 0); MF.lastSplat = time; }
-      else if (time - (MF.lastSplat || 0) > 0.32) { splat(MF.kind, Math.random() < 0.15); MF.lastSplat = time; }
-    } else MF.hitOn = false;
+    // брызги на стекло — только когда струя бьёт у самой кромки (поверхность ближе 0.25 высоты до неё)
+    if (hit && surface.visible && h > hLipAt(FLOW.alpha) - 0.25 && time - (MF.lastSplat || 0) > 0.45 && Math.random() < 0.7) {
+      const v = mT.clone().project(cam); splat(MF.kind, Math.random() < 0.2, (v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight); MF.lastSplat = time;
+    }
   }
 
   const stageEl = document.querySelector('.menu .stage');
@@ -1818,7 +1845,7 @@ function makeBigCup(scene, pos) {
     const turn = (hex, name, dir) => {
       if (!cup) return;
       const c = cup.sleeveMat.color, to = new THREE.Color(hex);
-      menuDrink(name);
+      menuPrep(name);
       if (REDUCED) { c.copy(to); cup.setLabel(name); return; }
       gsap.killTweensOf(S, 'spin,lift'); gsap.killTweensOf(c); if (labelCall) labelCall.kill();
       const TAU = Math.PI * 2, target = Math.round(S.spin / TAU) * TAU + dir * TAU;
@@ -1828,13 +1855,16 @@ function makeBigCup(scene, pos) {
       labelCall = gsap.delayedCall(0.65, () => cup.setLabel(name));
     };
     const drink = (i, dir) => turn(items[i].dataset.sleeve, items[i].dataset.label, dir);
+    addEventListener('menuarm', () => { items.forEach(el => el.classList.remove('arm', 'poured')); const el = items[cur]; if (el) { void el.offsetWidth; el.classList.add('arm'); } });   // полоска выбора с нуля — вместе с таймером
+    addEventListener('menupour', () => { const el = items[cur]; if (el) { el.classList.remove('arm'); el.classList.add('poured'); } });
+    document.getElementById('menu').addEventListener('click', e => { if (!e.target.closest('a')) menuFill(MF.label); });   // тап — налить сразу
     const flood = document.getElementById('flood');
     ScrollTrigger.create({ trigger: '#menu', start: 'top top', onEnter: () => flood.classList.add('gone'), onLeaveBack: () => flood.classList.remove('gone') });
     const setItem = i => {
       if (i === cur) return;
       const dir = i > cur ? 1 : -1;
       cur = i;
-      items.forEach((el, k) => el.classList.toggle('on', k === i));
+      items.forEach((el, k) => { el.classList.toggle('on', k === i); el.classList.remove('arm', 'poured'); });
       if (inMenu) drink(i, dir);                     // до входа в меню стакан фирменный; напиток наденется при входе
     };
     // Меню закреплено, список — барабан. Компьютер: активный напиток в середине, рядом стакан; один напиток = 0.75
@@ -1917,7 +1947,7 @@ function makeBigCup(scene, pos) {
       const c = cup.sleeveMat.color;
       if (scrollY >= menuST.start || (cup.label() === null && c.getHexString() === BRAND.slice(1))) return;
       gsap.killTweensOf(S, 'spin'); S.spin = 0; gsap.killTweensOf(c); if (labelCall) labelCall.kill();
-      if (MF.tl) MF.tl.kill(); MF.lid = MF.view = MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.label = null;
+      if (MF.tl) MF.tl.kill(); if (MF.arm) MF.arm.kill(); MF.lid = MF.view = MF.V = MF.Va = 0; MF.vols = {}; MF.kind = null; MF.label = null; MF.poured = false;
       if (cup.label() !== null) cup.setLabel(null);
       c.set(BRAND);
     });

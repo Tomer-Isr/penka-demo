@@ -747,24 +747,32 @@ function makeBigCup(scene, pos) {
   }
 
   // камера неподвижна: смотрит на стакан. Кофе заполняет страницу слоем в экранных координатах.
-  const DESK_ORBIT = 0.5;
+  // облёт камеры на наливе: сверху должно быть видно ДНО — эспрессо льют первым, он на донышке; при 0.5 (компьютер) и
+  // одном подъёме камеры (телефон) дно закрывала передняя стенка — кофе «не видно, наполняет одно молоко» (Томер 29.10)
+  const DESK_ORBIT = 0.78, MOB_ORBIT = 0.4, layCam = new THREE.PerspectiveCamera();
   function placeCamera() {
     // во время налива камера поднимается — смотрим на стакан чуть сверху и видим поверхность кофе внутри
     // налив в меню: камера поднимается, чтобы смотреть в стакан сверху (иначе она ниже поверхности напитка и видна
     // только задняя стенка над ним)
     // компьютер: камеру не двигаем (стакан рос и съезжал) — там стакан сильнее наклоняется к зрителю (frame)
-    const cu = S.camUp, mv = window.__menuFill && MOBILE() ? __menuFill.view : 0;
-    cam.position.set(0, 0.55 + 0.9 * cu + 3.0 * mv, 6.2); cam.lookAt(0, 0.45 + 0.2 * cu + 0.4 * mv, 0);
-    // компьютер, налив в меню: камера облетает стакан вверх вокруг его центра — стакан остаётся на той же точке
+    const cu = S.camUp, mv = window.__menuFill && MOBILE() ? __menuFill.view : 0, tg = new THREE.Vector3(0, 0.45 + 0.2 * cu + 0.4 * mv, 0);
+    cam.position.set(0, 0.55 + 0.9 * cu + 3.0 * mv, 6.2); cam.lookAt(tg);
+    cam.fov = MOBILE() ? 30 : 24; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    // раскладка (где стоит стакан на экране) считается по камере БЕЗ облёта: облёт идёт вокруг стакана, а место стакана
+    // бралось из камеры — петля, при крутом облёте на телефоне расходилась: стакан улетал за экран на кадр (29.10)
+    layCam.copy(cam); layCam.updateMatrixWorld();
+    // налив в меню: камера облетает стакан вверх вокруг его центра — стакан остаётся на той же точке
     // экрана и того же размера, а в него видно сверху. Раньше только наклон стакана к зрителю (0.5): горизонтальная
     // поверхность читалась тонкой полоской под кромкой, над ней — белая задняя стенка, стакан казался пустым (29.10)
-    const dv = window.__menuFill && !MOBILE() ? __menuFill.view : 0;
+    const dv = window.__menuFill ? __menuFill.view : 0;
     if (dv > 0 && cup) {
-      const P = cup.group.position, a = -DESK_ORBIT * dv * dv * (3 - 2 * dv), ca = Math.cos(a), sa = Math.sin(a);
+      // пока налито мало — смотрим круче (до +0.3): дно с эспрессо не закрыто передней стенкой; наполняется — камера
+      // плавно возвращается (объём меняется твином, без рывков)
+      const low = 0.3 * (1 - Math.min(1, __menuFill.V / 0.6));
+      const P = cup.group.position, a = -((MOBILE() ? MOB_ORBIT : DESK_ORBIT) + low) * dv * dv * (3 - 2 * dv), ca = Math.cos(a), sa = Math.sin(a);
       const rot = v => { const y = v.y - P.y, z = v.z - P.z; v.y = P.y + y * ca - z * sa; v.z = P.z + y * sa + z * ca; return v; };
-      const tg = rot(new THREE.Vector3(0, 0.45 + 0.2 * cu, 0)); rot(cam.position); cam.lookAt(tg);
+      rot(tg); rot(cam.position); cam.lookAt(tg); cam.updateMatrixWorld();
     }
-    cam.fov = MOBILE() ? 30 : 24; cam.updateProjectionMatrix();
   }
 
   // ── кофе, заполняющий страницу: тело гладкое, вся жизнь — на верхней границе ──
@@ -812,10 +820,11 @@ function makeBigCup(scene, pos) {
   // кофе рисуется отдельным проходом ДО сцены — иначе прозрачный слой лёг бы поверх стакана
   const liqScene = new THREE.Scene(), liqCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   if (liquid) { liquid.frustumCulled = false; liqScene.add(liquid); R.autoClear = false; }
-  function screenToWorldY(py, z = 0) {
-    const ndc = new THREE.Vector3(0, 1 - 2 * py / innerHeight, 0.5).unproject(cam);
-    const d = ndc.sub(cam.position).normalize(); const t = (z - cam.position.z) / d.z;
-    return cam.position.y + d.y * t;
+  // по умолчанию — камера раскладки (без облёта); струе меню, которой надо начаться за верхним краем кадра, — cam
+  function screenToWorldY(py, z = 0, c = layCam) {
+    const ndc = new THREE.Vector3(0, 1 - 2 * py / innerHeight, 0.5).unproject(c);
+    const d = ndc.sub(c.position).normalize(); const t = (z - c.position.z) / d.z;
+    return c.position.y + d.y * t;
   }
   const toScreenX = (w) => { const v = w.clone().project(cam); return (v.x * 0.5 + 0.5) * innerWidth; };
 
@@ -1663,13 +1672,18 @@ function makeBigCup(scene, pos) {
       surfLook(time, col, rim, coffee);
     } else surface.visible = false;
     MF.dbg = { h, lip: hLipAt(FLOW.alpha), vis: surface.visible, col: MF.col };   // для tests/
+    // для tests/: точка поверхности на полпути от центра к дальнему краю — на экране (её не закрывает струя)
+    if (surface.visible) { const d = cen.clone().sub(cam.position).setY(0).normalize(), v = cen.clone().addScaledVector(d, 0.5 * surfRad).project(cam);
+      MF.dbg.px = [(v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight];
+      // и ближняя к зрителю точка кромки: всё, что на экране ниже неё, закрыто передней стенкой
+      const m = cup.mouthWorld(new THREE.Vector3()), f = m.clone().addScaledVector(d, -rIn(0.985) * sc).project(cam); MF.dbg.rimY = (0.5 - f.y * 0.5) * innerHeight; }
     // мокрый след — только под жидкостью, не выше: у молочных «кофейный» след у линии давал коричневое кольцо (29.10)
     M.fill(Math.max(0, h - 0.04)); cup.stainU.uWet.value = 0;
     // струя: из-за верхнего края в середину поверхности (пусто — в дно); фронт падает с ускорением, после остановки
     // хвост отрывается и падает так же
     if (!MF.kind) return;
     if (surface.visible) mT.copy(cen); else cup.inner.localToWorld(mT.set(0, 0.05, 0));
-    const now = performance.now() / 1000, yTop = screenToWorldY(-30, mT.z);
+    const now = performance.now() / 1000, yTop = screenToWorldY(-30, mT.z, cam);
     let top = yTop, bot = Math.max(mT.y, yTop - 4.9 * (now - MF.t0) ** 2);
     if (MF.end > 0) { top = yTop - 4.9 * (now - MF.end) ** 2; if (top <= mT.y + 0.005) { MF.kind = null; return; } }
     if (top - bot < 0.005) return;
@@ -1728,8 +1742,8 @@ function makeBigCup(scene, pos) {
   // плавно (сглаживание ~0.3 с), в пути чуть крутится; мест на экране нет — стакана нет
   const spots = [...document.querySelectorAll('.cup-spot')], SPOT = { x: 0, y: 0, s: 0.5, on: false, t: 0, el: null };
   function screenToWorldX(px, py) {
-    const ndc = new THREE.Vector3(px / innerWidth * 2 - 1, 1 - 2 * py / innerHeight, 0.5).unproject(cam);
-    const d = ndc.sub(cam.position).normalize(); return cam.position.x + d.x * (-cam.position.z / d.z);
+    const ndc = new THREE.Vector3(px / innerWidth * 2 - 1, 1 - 2 * py / innerHeight, 0.5).unproject(layCam);
+    const d = ndc.sub(layCam.position).normalize(); return layCam.position.x + d.x * (-layCam.position.z / d.z);
   }
   function spotTarget() {
     let best = null, bd = 1e9;

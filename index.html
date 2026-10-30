@@ -941,6 +941,7 @@ function makeBigCup(scene, pos) {
   const FADE = { uFadeY: { value: 99 }, uFadeL: { value: 0.1 } };
   const withFade = (base, key, glow) => { const m = base.clone(); m.transparent = true;
     m.onBeforeCompile = sh => { base.onBeforeCompile(sh); Object.assign(sh.uniforms, FADE);
+      sh.fragmentShader = sh.fragmentShader.replace('h *= 0.07;', 'h *= 0.028;');   // слабее рябь: перекрученный «канат» (Томер 30.10)
       if (glow != null) sh.fragmentShader = sh.fragmentShader.replace('Tr * vec3(0.85, 0.45, 0.18) * uGlow', 'Tr * vec3(0.85, 0.45, 0.18) * uGlow * ' + glow.toFixed(2));
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFY = (modelMatrix * vec4(transformed, 1.0)).y;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFY; uniform float uFadeY, uFadeL;')
@@ -950,7 +951,7 @@ function makeBigCup(scene, pos) {
   const mCoffee = R && withFade(coffeeMat, 'menu-coffee', 0.35), mWater = R && withFade(waterMat, 'menu-water');
   const mLiqs = R ? [withFade(liqMat, 'menu-milk-a'), withFade(liqMat, 'menu-milk-b')] : [];
   const tailDrops = [];
-  if (R) for (let i = 0; i < 4; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), coffeeMat); d.visible = false; d.renderOrder = 2; d.frustumCulled = false; scene.add(d); tailDrops.push(d); }
+  if (R) for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), coffeeMat); d.visible = false; d.renderOrder = 2; d.frustumCulled = false; scene.add(d); tailDrops.push(d); }
   // брызги удара: мелкие капли выпрыгивают из места, где струя бьёт в поверхность, и падают обратно
   const splashDrops = [];
   if (R) for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), coffeeMat); d.visible = false; d.renderOrder = 2; scene.add(d); splashDrops.push(d); }
@@ -979,14 +980,24 @@ function makeBigCup(scene, pos) {
   // uMenu = 0 — поверхность прежняя (вершинные цвета)
   const SF = { uMenu: { value: 0 }, uT: { value: 0 }, uCen: { value: new THREE.Vector3() }, uRad: { value: 1 }, uImp: { value: new THREE.Vector2() },
     uPour: { value: 0 }, uSwirl: { value: 0 }, uUnder: { value: new THREE.Color() }, uSpot: { value: new THREE.Color() }, uRimC: { value: new THREE.Color() },
-    uSpotR: { value: 0 }, uPud: { value: 9 }, uSoft: { value: 0.1 }, uWave: { value: new THREE.Vector4() }, uIsl: { value: 0 }, uCrU: { value: 0 }, uCrS: { value: 0 }, uFoU: { value: 0 }, uFoS: { value: 0 }, uRim: { value: 0 } };
+    uSpotR: { value: 0 }, uPud: { value: 9 }, uSoft: { value: 0.1 }, uWave: { value: new THREE.Vector4() }, uIsl: { value: 0 }, uCrU: { value: 0 }, uCrS: { value: 0 }, uFoU: { value: 0 }, uFoS: { value: 0 }, uRim: { value: 0 },
+    uArt: { value: 0 }, uBody: { value: new THREE.Color() }, uCrC: { value: new THREE.Color() }, uCrH: { value: 0 }, uArtR: { value: 0 }, uPull: { value: 0 },
+    uHeart: { value: 0 }, uJet: { value: 0.03 }, uMilkUp: { value: 0 } };
   if (surfMat) surfMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, SF);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vSW; uniform vec4 uWave; uniform float uMenu, uT, uRad, uPour, uSwirl, uSpotR, uPud, uSoft, uIsl, uCrU, uCrS, uFoU, uFoS, uRim;
-      uniform vec3 uCen, uUnder, uSpot, uRimC; uniform vec2 uImp;
+      uniform float uArt, uCrH, uArtR, uPull, uHeart, uJet, uMilkUp;
+      uniform vec3 uCen, uUnder, uSpot, uRimC, uBody, uCrC; uniform vec2 uImp;
+      // сердце (Иниго Килес): острие в (0,0), доли вверх до y≈1.1
+      float sdHeart(vec2 p){ p.x = abs(p.x);
+        if (p.y + p.x > 1.0) return length(p - vec2(0.25, 0.75)) - 0.35355;
+        vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0); return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y); }
+      // пятно пены: растёт кругом из места удара; протяжка (uPull) тянет его в сердце острием к зрителю (+z)
+      float artD(vec2 p){ float dc = length(p) - uArtR; if (uHeart < 0.5 || uPull <= 0.0) return dc;
+        float k = uArtR * 1.7; return mix(dc, sdHeart(vec2(p.x, -p.y) / k + vec2(0.0, 0.55)) * k, uPull); }
       vec2 sh2(vec2 p){ p = vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
       float sn(vec2 x){ vec2 p=floor(x), w=fract(x), u=w*w*(3.0-2.0*w);
         return mix(mix(dot(sh2(p)*2.0-1.0,w), dot(sh2(p+vec2(1,0))*2.0-1.0,w-vec2(1,0)), u.x), mix(dot(sh2(p+vec2(0,1))*2.0-1.0,w-vec2(0,1)), dot(sh2(p+vec2(1,1))*2.0-1.0,w-vec2(1,1)), u.x), u.y)*0.7+0.5; }
@@ -1022,7 +1033,12 @@ function makeBigCup(scene, pos) {
         return a < 0.3 ? mix(uWave.x, uWave.y, a / 0.3) : a < 0.6 ? mix(uWave.y, uWave.z, (a - 0.3) / 0.3)
           : a < 0.9 ? mix(uWave.z, uWave.w, (a - 0.6) / 0.3) : uWave.w * max(0.0, 1.0 - (a - 0.9) / 0.5); }
       float spotH(vec2 p){ vec2 q = surfQ(p); float s = spotOf(p, q);
-        float rI = length(p - uImp), rip = sin(rI * 30.0 - uT * 16.5) * exp(-rI * 1.4) * waveAmp(rI) - 1.6 * exp(-rI * rI / 0.006) * uPour;
+        // рябь от удара — мелкая (капиллярная, λ 3–6 мм — 0.1–0.17 радиуса), неровная по кругу и гаснет к стенкам;
+        // ямка — по толщине струи (1.5–2 её диаметра); было: кольца λ 7 мм через всю поверхность — «штамп» (Томер 30.10)
+        vec2 dv = p - uImp; float rI = length(dv), an = atan(dv.y, dv.x), wb = 0.02 * (sn(vec2(an * 2.0, uT * 0.6)) - 0.5);
+        float rip = (0.6 * sin((rI + wb) * 52.0 - uT * 20.0) + 0.4 * sin((rI - wb) * 36.0 - uT * 14.0 + 1.3)) * exp(-rI / 0.22) * waveAmp(rI)
+          - 1.6 * exp(-rI * rI / max(1e-4, 9.0 * uJet * uJet)) * uPour;
+        if (uPud < 2.0) rip += 0.8 * exp(-pow((rI - uPud) / 0.035, 2.0));             // лужица на сухом дне — валик по краю
         float f = mix(uFoU, uFoS, s); vec2 b = bub(q * 8.0 + 4.0, 0.16, 0.12) * max(f, smoothstep(0.7, 0.95, length(p)));
         return rip * 0.004 + (b.y - b.x * 0.4) * 0.001 * (0.3 + f); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -1031,15 +1047,31 @@ function makeBigCup(scene, pos) {
           vec2 p = (vSW.xz - uCen.xz) / uRad, q = surfQ(p); float r = length(p);
           // первые капли — лужица от места удара, растекается к стенкам (неровный край), а не сразу всё дно
           if (uPud < 2.0 && length(p - uImp) > uPud * (1.0 + 0.18 * (sf(p * 3.0 + uT * 0.3) - 0.5))) discard;
-          float s = spotOf(p, q);
-          vec3 c = mix(uUnder, uSpot, s);
+          float s = spotOf(p, q), tig = sf(vec2(q.x * 3.0 + q.y * 1.5, q.y * 9.0 - q.x * 2.0) + uT * 0.03);
+          vec3 c; float cr, fo;
+          if (uArt > 0.5) {
+            // молоко в эспрессо (латте, капучино): молоко ныряет под крему — напиток однородный (uBody), крема плавает
+            // ковром, растягивается, светлеет и рвётся до пятен; у струи всплывает светлое; в конце — пятно пены
+            // и протяжка в сердце (POUR_RESEARCH; было: молоко лежало белой «стопкой» поверх кофе — Томер 30.10)
+            float film = smoothstep(uCrH - 0.04, uCrH + 0.2, sf(q * 3.2 + 7.0) + 0.04 * sin(uT * 0.7));
+            c = mix(uBody, uCrC * (0.84 + 0.34 * tig), film);
+            float dI = length(p - uImp);
+            c = mix(c, mix(uBody, vec3(0.93, 0.9, 0.85), 0.35), uMilkUp * (1.0 - smoothstep(uJet * 2.0, uJet * 6.0 + 0.04 * sn(q * 9.0 + uT * 3.0), dI)));
+            float dA = artD(p) + 0.02 * (sf(q * 6.0 + 2.0) - 0.5), wf = 1.0 - smoothstep(-0.03, 0.012, dA);
+            c = mix(c, c * 0.84, (1.0 - wf) * exp(-pow((dA - 0.03) / 0.035, 2.0)) * 0.55 * step(0.01, uArtR));  // пена отжала крему — тёмный ободок
+            // микропена: белая к середине, к краю берёт цвет напитка (тонкий слой), бархатная
+            vec3 fc = mix(mix(uBody, vec3(0.95, 0.93, 0.88), 0.75), vec3(0.95, 0.93, 0.88), smoothstep(-0.0, -0.08, dA));
+            c = mix(c, fc * (0.96 + 0.06 * sf(q * 14.0)), wf);
+            cr = film * (1.0 - wf) * 0.8; fo = max(wf, 0.2);
+          } else {
+          c = mix(uUnder, uSpot, s);
           // крема: тигровые разводы (вытянутая рябь по спирали) и тёмные «слёзы»
-          float cr = mix(uCrU, uCrS, s);
-          float tig = sf(vec2(q.x * 3.0 + q.y * 1.5, q.y * 9.0 - q.x * 2.0) + uT * 0.03);
+          cr = mix(uCrU, uCrS, s);
           c *= mix(1.0, 0.82 + 0.38 * tig, cr);
           c = mix(c, c * 0.6, cr * smoothstep(0.62, 0.74, sf(q * 7.0 + 9.0)) * 0.35);
           // пена: микропена ровная, бархатная, с редкими крупными пузырями — они медленно лопаются
-          float fo = mix(uFoU, uFoS, s);
+          fo = mix(uFoU, uFoS, s);
+          }
           // мелкие пузырьки гаснут, когда мельче пикселя (иначе — «перец» из мерцающих точек)
           float px1 = 1.0 - smoothstep(0.12, 0.35, fwidth(q.x) * 18.0);
           vec2 b1 = bub(q * 18.0, 0.5, 0.25) * px1, b2 = bub(q * 8.0 + 4.0, 0.16, 0.12);
@@ -1050,7 +1082,7 @@ function makeBigCup(scene, pos) {
           c *= 0.94 + 0.12 * sf(q * 14.0 - 2.0) * fo;
           // у места удара — светлая пена от струи; пятно эспрессо темнее к середине (крема светлеет к краю)
           float dI = length(p - uImp);
-          c = mix(c, c * 0.68, s * uCrS * (1.0 - smoothstep(0.0, uSpotR * 0.85, dI)) * step(uSpotR, 1.2)); c = mix(c, uSpot * 1.1 + 0.04, uPour * (1.0 - smoothstep(0.04, 0.2 + 0.08 * sn(q * 9.0 + uT * 3.0), dI)) * 0.8);
+          if (uArt < 0.5) c = mix(c, c * 0.68, s * uCrS * (1.0 - smoothstep(0.0, uSpotR * 0.85, dI)) * step(uSpotR, 1.2)); if (uArt < 0.5) c = mix(c, uSpot * 1.1 + 0.04, uPour * (1.0 - smoothstep(0.04, 0.2 + 0.08 * sn(q * 9.0 + uT * 3.0), dI)) * 0.8);
           // мениск у стенки
           c = mix(c, uRimC, uRim * smoothstep(0.8, 0.97, r + 0.05 * (sf(q * 5.0) - 0.5)));
           diffuseColor.rgb = c;
@@ -1568,18 +1600,22 @@ function makeBigCup(scene, pos) {
   // меню как в израильской кофейне, только то, что наливают в стакан 350 мл (29.10: эспрессо и макиато честно
   // занимали донышко — «первый стакан не наполняется»). Без молока — американо, колд брю; хафух — молоко с пеной,
   // эспрессо сверху (поэтому «перевёрнутый»); мокко — шоколад на дне
+  // Пропорции — реальные (docs/POUR_RESEARCH.md; Томер 30.10: «не так, что на дне кофе, потом стопка молока»): двойной
+  // эспрессо ~50 мл в стакане 370 мл — 0.135 объёма, а не четверть. У латте, флэт уайта, капучино и мокко последняя
+  // порция — пена: питчер опускают к поверхности, расход растёт, всплывает белое пятно (ART — какой рисунок)
   const RECIPES = {
-    hafuch: [['milk', 0.5], ['foam', 0.66], ['shot', 0.84]],
-    cappuccino: [['shot', 0.24], ['milk', 0.66], ['foam', 0.86]],
-    latte: [['shot', 0.22], ['milk', 0.88]],
-    'flat white': [['shot', 0.26], ['milk', 0.82]],
-    mocha: [['choc', 0.12], ['shot', 0.32], ['milk', 0.72], ['foam', 0.86]],
-    americano: [['shot', 0.2], ['water', 0.84]],
+    hafuch: [['milk', 0.5], ['foam', 0.7], ['shot', 0.84]],
+    cappuccino: [['shot', 0.135], ['milk', 0.5], ['foam', 0.86]],
+    latte: [['shot', 0.135], ['milk', 0.78], ['foam', 0.87]],
+    'flat white': [['shot', 0.16], ['milk', 0.62], ['foam', 0.68]],
+    mocha: [['choc', 0.07], ['shot', 0.2], ['milk', 0.66], ['foam', 0.84]],
+    americano: [['shot', 0.135], ['water', 0.8]],
     'matcha latte': [['oat', 0.5], ['matcha', 0.84]],
     'ice coffee': [['slush', 0.86]],
     'cold brew': [['coldbrew', 0.84]],
     'milk:milk': [['milk', 0.8]], 'milk:oat': [['oat', 0.8]], 'milk:almond': [['almond', 0.8]], 'milk:lactose': [['lactose', 0.8]],
   };
+  const ART = { latte: 'heart', 'flat white': 'heart', cappuccino: 'round', mocha: 'round' };
   const MF = { lid: 0, view: 0, V: 0, vols: {}, kind: null, segs: [], tl: null, label: null };
   window.__menuFill = MF;   // для tests/
   // ── физика налива в меню (Томер 29.10: «струйка только падает на дно, а там уже полстакана… сделаем физически») ──
@@ -1590,27 +1626,47 @@ function makeBigCup(scene, pos) {
   // • в стакане — только долетевшее: V(t) = Σ E(t − τ), E — сколько вылилось из носика к моменту;
   // • толщина струи на высоте d под носиком — из неразрывности: πr²·v = Q, v = √(v0² + 2gd): у носика толще, внизу
   //   тоньше; на открытии и закрытии расход мал — фронт и хвост сами сужаются в нитку и рвутся на капли.
-  const RATE = { shot: 0.11, coffee: 0.16, coldbrew: 0.17, water: 0.2, milk: 0.2, foam: 0.15, oat: 0.2, almond: 0.2, lactose: 0.2, matcha: 0.15, slush: 0.14, choc: 0.1 };
-  // носик наклоняют быстро (0.06 с — голова струи сразу полной толщины, а не клином) и закрывают плавно (0.35 с — хвост
-  // сходит в нитку); следующая жидкость начинается, пока хвост прошлой ещё летит (две струи в воздухе — две сетки),
-  // а не после мёртвой паузы (QA 30.10: «0.7 с струи нет, поверхность замёрзла»)
-  const RAMP_O = 0.06, RAMP_C = 0.35, GAP = 0.12;
+  // Расход — кривая во времени, стаканов/с (стакан 370 мл), по реальным (POUR_RESEARCH): эспрессо из питчера ~22 мл/с,
+  // молоко в заливке ~30 мл/с и растёт — питчер опускают; рисунок пеной — низко, расход ×1.5; в конце протяжка —
+  // питчер поднимают, струя тоньше. Было 0.11–0.2 (40–75 мл/с) — струя толще реальной вдвое, «непонятно толстая» (30.10)
+  const RATE = { shot: 0.06, coffee: 0.08, coldbrew: 0.08, water: 0.09, milk: 0.085, foam: 0.125, oat: 0.085, almond: 0.085, lactose: 0.085, matcha: 0.08, slush: 0.09, choc: 0.04 };
+  const MILKY = { milk: 1, oat: 1, almond: 1, lactose: 1 };
+  // открытие быстрое (голова сразу полной толщины), закрытие — струя сходит в нитку; молоко → пена — один питчер:
+  // расходы перетекают (XF), а не складываются; PULL — протяжка рисунка перед закрытием
+  const OPEN = 0.08, CLOSE = 0.3, XF = 0.3, GAP = 0.15, PULL = 0.55, SEG_DT = 1 / 120;
   // Падение — в замедленной съёмке, как струя первой секции (g = 9.8 в мировых единицах, стакан ≈ 1): при честном g
   // стакана 12 см фронт пролетал кадр за 0.2 с — струя «возникала целиком» и падала «тяжёлым грузом» (Томер 30.10).
   // Толщина — из честной неразрывности (в замедленной съёмке расход и скорости делятся на одно число — сечение то же)
   const G_SHOW = 9.8, V0_SHOW = 1.4, G_CUP = 9.8 / 0.12 * 0.985;
-  // sg.ro — открытие: у продолжения из того же питчера (пена после молока) оно равно закрытию предыдущего и идёт
-  // одновременно — расход перетекает, а не складывается (было: два носика сразу, всплеск ×1.6)
-  const segFlow = (sg, t) => {                               // доля расхода 0..1 сегмента в момент t
-    const a = t - sg.ts; if (a <= 0) return 0; if (a < sg.ro) return a / sg.ro;
-    const b = a - sg.ro - sg.L; if (b <= 0) return 1; return b < RAMP_C ? 1 - b / RAMP_C : 0; };
-  const outAt = (sg, t) => {                                 // сколько вылилось из носика к моменту t (интеграл расхода)
-    const a = t - sg.ts; if (a <= 0) return 0;
-    if (a < sg.ro) return sg.q * a * a / (2 * sg.ro);
-    let v = sg.q * sg.ro / 2; const b = a - sg.ro; if (b < sg.L) return v + sg.q * b; v += sg.q * sg.L;
-    const c = b - sg.L; return c < RAMP_C ? v + sg.q * (c - c * c / (2 * RAMP_C)) : v + sg.q * RAMP_C / 2; };
-  const endOf = sg => sg.ts + sg.ro + sg.L + RAMP_C;
-  const mfReset = () => { MF.shotT = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; };
+  const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  // сегмент: жидкость, начало, объём; o.cin — продолжение того же питчера, o.cout — дальше он же, o.grow — питчер
+  // опускают (расход растёт), o.pull — протяжка в конце. Длительность подбирается так, чтобы вылилось ровно vol
+  function mkSeg(kind, ts, vol, o) {
+    const F = RATE[kind] || 0.08, oi = o.cin ? XF : OPEN, oc = o.cout ? XF : kind === 'shot' ? 0.45 : CLOSE;
+    const prof = (a, D) => {
+      if (a <= 0 || a >= D) return 0;
+      let f = F * (o.grow ? 0.8 + 0.4 * a / D : 1);
+      if (kind === 'shot') f *= 1 + 0.06 * Math.sin(a * 9);                      // рука с питчером эспрессо не ровная
+      if (o.pull) f *= 1 - 0.6 * ss(D - oc - PULL, D - oc - PULL + 0.15, a);     // протяжка: питчер подняли
+      if (a < oi) f *= a / oi; if (a > D - oc) f *= (D - a) / oc;
+      return f; };
+    const integ = D => { let v = 0; for (let a = SEG_DT / 2; a < D; a += SEG_DT) v += prof(a, D) * SEG_DT; return v; };
+    let lo = oi + oc, hi = 40;
+    for (let k = 0; k < 28; k++) { const m = (lo + hi) / 2; if (integ(m) < vol) lo = m; else hi = m; }
+    const D = hi, n = Math.ceil(D / SEG_DT), cum = new Float32Array(n + 1);
+    for (let i = 0; i < n; i++) cum[i + 1] = cum[i] + prof((i + 0.5) * SEG_DT, D) * SEG_DT;
+    const k = vol / cum[n];
+    return { kind, ts, D, n, cum, k, prof, F, oc, pull: !!o.pull, contNext: !!o.cout };
+  }
+  const segFlow = (sg, t) => sg.k * sg.prof(t - sg.ts, sg.D);                 // расход сегмента в момент t
+  const outAt = (sg, t) => {                                                   // сколько вылилось из носика к моменту t
+    const a = (t - sg.ts) / SEG_DT; if (a <= 0) return 0; if (a >= sg.n) return sg.k * sg.cum[sg.n];
+    const i = Math.floor(a); return sg.k * (sg.cum[i] + (sg.cum[i + 1] - sg.cum[i]) * (a - i)); };
+  const endOf = sg => sg.ts + sg.D;
+  // рука с питчером на протяжке: точка удара идёт от центра пятна к ближнему краю (доля радиуса поверхности, +z к зрителю)
+  const pullAt = te => { const sg = MF.segs.find(g => g.pull); if (!sg) return 0;
+    const t0 = sg.ts + sg.D - sg.oc - PULL; return ss(t0, t0 + PULL, te); };
+  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; };
   // Выбор напитка — действием (Томер 29.10: «зачем наливать, если пользователь ничего не выбрал… пользователь должен
   // что-то нажать»): листание меняет напиток — стакан закрыт, оборот, новый рукав; налив — по кнопке «Налить» на
   // карточке («Заказать») или тапу по стакану. Автоналива нет (ни сразу, ни по остановке — это было в v50–v52)
@@ -1641,12 +1697,13 @@ function makeBigCup(scene, pos) {
     // жидкостями — пауза, хвост успевает долететь. Расход подогнан так, что вылито ровно по рецепту
     tl.call(() => {
       MF.spout = spoutHeight();
-      let t = performance.now() / 1000 + 0.45, prev = 0, cont = false;
+      let t = performance.now() / 1000 + 0.45, prev = 0, cin = false;
+      MF.art = ART[label] || null; MF.foamTot = 0; MF.coffeeFirst = !!LIQ[rec[0][0]].coffee;
       MF.segs = rec.map(([kind, to], i) => {
-        const ro = cont ? RAMP_C : RAMP_O, vol = to - prev, L = Math.max(0.05, vol / (RATE[kind] || 0.18) - (ro + RAMP_C) / 2);
-        const sg = { kind, q: vol / (ro / 2 + L + RAMP_C / 2), L, ts: t, ro };
-        const next = rec[i + 1]; cont = !!next && kind === 'milk' && next[0] === 'foam'; sg.contNext = cont;
-        t = cont ? endOf(sg) - RAMP_C : endOf(sg) + GAP; prev = to; return sg;
+        const next = rec[i + 1], cout = !!next && MILKY[kind] && next[0] === 'foam', vol = to - prev;
+        const sg = mkSeg(kind, t, vol, { cin, cout, grow: MILKY[kind] && MF.coffeeFirst, pull: kind === 'foam' && MF.art === 'heart' });
+        if (kind === 'foam') MF.foamTot += vol;
+        t = cout ? endOf(sg) - XF : endOf(sg) + GAP; prev = to; cin = cout; return sg;
       });
     }, null, 0);
   }
@@ -1703,6 +1760,9 @@ function makeBigCup(scene, pos) {
   const mixOf = (keys) => { const c = [0, 0, 0]; let W = 0;
     for (const k of keys) { const w = MF.vols[k] * (LIQ[k].top || 1), cc = colOf(k); W += w; for (let j = 0; j < 3; j++) c[j] += cc[j] * w; }
     return W > 0 ? c.map(v => v / W) : null; };
+  // цвет молочного кофе по доле кофе: опорные — молоко, латте (~0.17), капучино (~0.33), эспрессо (фото напитков)
+  const MIXK = [[0, [0.93, 0.9, 0.85]], [0.17, [0.76, 0.6, 0.44]], [0.35, [0.6, 0.42, 0.27]], [0.6, [0.42, 0.26, 0.14]], [1, [0.3, 0.17, 0.08]]];
+  const mixCol = x => { for (let i = 1; i < MIXK.length; i++) if (x <= MIXK[i][0]) { const [a, ca] = MIXK[i - 1], [b, cb] = MIXK[i], t = (x - a) / (b - a); return ca.map((v, j) => v + (cb[j] - v) * t); } return MIXK[MIXK.length - 1][1]; };
   function surfLook(time, col, rim, coffee) {
     const dt = Math.min(0.1, Math.max(0, time - (MF.lt || time))); MF.lt = time;
     if (MF.kind) MF.top = MF.kind;
@@ -1714,11 +1774,13 @@ function makeBigCup(scene, pos) {
     MF.swR = hit ? Math.min(1.4, (MF.swR || 0) + dt * 1.5) : 0.05 + ((MF.swR || 0) - 0.05) * Math.exp(-dt / 2.2);
     MF.sw = (MF.sw || 0) + MF.swR * dt;
     SF.uMenu.value = 1; SF.uT.value = time; SF.uCen.value.copy(cen); SF.uRad.value = surfRad * 1.02;
-    SF.uPour.value += ((hit ? Math.min(1, (MF.flux || 0) / 0.15) : 0) - SF.uPour.value) * Math.min(1, dt / 0.12);
+    SF.uPour.value += ((hit ? Math.min(1, (MF.flux || 0) / 0.07) : 0) - SF.uPour.value) * Math.min(1, dt / 0.12);
+    const kick = MF.kick && time - MF.kick < 0.15 ? 0.5 : 0;                   // капля хвоста упала — кружок ряби
     // история расхода для бегущих кругов: сейчас, 0.3, 0.6, 0.9 с назад
-    (MF.fh = MF.fh || []).push([time, SF.uPour.value]); while (MF.fh.length > 2 && MF.fh[1][0] < time - 1.2) MF.fh.shift();
+    (MF.fh = MF.fh || []).push([time, Math.max(SF.uPour.value, kick)]); while (MF.fh.length > 2 && MF.fh[1][0] < time - 1.2) MF.fh.shift();
     const fAt = T => { let v = 0; for (const [t, f] of MF.fh) { if (t > T) break; v = f; } return v; };
     SF.uWave.value.set(fAt(time), fAt(time - 0.3), fAt(time - 0.6), fAt(time - 0.9));
+    SF.uJet.value += (Math.max(0.012, (MF.jet || 0) / (surfRad * 1.02)) - SF.uJet.value) * Math.min(1, dt / 0.1);
     if (MF.imp) SF.uImp.value.set((MF.imp[0] - cen.x) / (surfRad * 1.02), (MF.imp[1] - cen.z) / (surfRad * 1.02));
     SF.uSwirl.value = Math.min(MF.sw, 2.5);
     if (MF.vols.shot > 0 && !MF.shotT) MF.shotT = performance.now() / 1000;
@@ -1737,7 +1799,29 @@ function makeBigCup(scene, pos) {
     const anyCoffee = keys.some(k => LIQ[k].coffee && !LIQ[k].water);
     SF.uRimC.value.setRGB(...(coffee ? [0.42, 0.25, 0.12] : anyCoffee ? [0.3, 0.17, 0.08] : col.map(v => v * 0.86)));
     SF.uRim.value = coffee ? 0.55 : anyCoffee ? 0.75 : 0.4;
-    MF.look = { top, under: uL, spotR: SF.uSpotR.value, sw: SF.uSwirl.value };   // для tests/
+    // Латте, капучино: молоко ныряет под крему. Цвет — не среднее по объёму (вышло бы серое), а поглощение: молоко,
+    // потемневшее по доле кофе (латте ~0.17 — светлая карамель, эспрессо — почти чёрный); доходит с задержкой ~0.6 с.
+    // Крема — плёнка эспрессо: растягивается по растущей поверхности, светлеет и рвётся. Пена — пятно из места удара,
+    // растёт по налитой пене; протяжка — в сердце
+    const vC = (MF.vols.shot || 0) + (MF.vols.choc || 0), vM = keys.reduce((a, k) => a + (MILKY[k] || k === 'foam' ? MF.vols[k] : 0), 0);
+    const art = MF.coffeeFirst && MF.art && vM > 0.003;
+    SF.uArt.value = art ? 1 : 0;
+    if (art) {
+      const conc = vC / Math.max(1e-4, vC + vM); MF.concS = MF.concS ? MF.concS + (conc - MF.concS) * Math.min(1, dt / 0.6) : 1;
+      const body = mixCol(MF.concS);
+      const st = Math.min(1, vM / Math.max(1e-4, vC + vM) / 0.85), crd = colOf('shot');
+      SF.uBody.value.setRGB(...body);
+      // крема светлеет только до ореховой: к телу напитка (~0.8) сердце лежало на бежевой глади, без контраста (30.10)
+      SF.uCrC.value.setRGB(...crd.map((v, j) => v + ([0.5, 0.32, 0.17][j] - v) * st));
+      SF.uCrH.value = 0.1 + 0.15 * st * st;                                   // доля дыр в креме
+      SF.uMilkUp.value += ((hit && MILKY[MF.kind] ? 1 : 0) - SF.uMilkUp.value) * Math.min(1, dt / 0.25);
+      const fr = MF.foamTot ? Math.min(1, (MF.vols.foam || 0) / MF.foamTot) : 0;
+      SF.uArtR.value = (MF.art === 'heart' ? 0.6 : 0.86) * Math.sqrt(fr);
+      SF.uHeart.value = MF.art === 'heart' ? 1 : 0;
+      SF.uPull.value = pullAt(performance.now() / 1000 - (MF.tS || 0));
+      SF.uCrS.value = SF.uCrU.value = 0.8; SF.uFoS.value = SF.uFoU.value = Math.max(0.2, fr);
+    }
+    MF.look = { top, under: uL, spotR: SF.uSpotR.value, sw: SF.uSwirl.value, art, artR: SF.uArtR.value, pull: SF.uPull.value };   // для tests/
   }
   function menuPour(time) {
     if (!R) return;
@@ -1757,7 +1841,7 @@ function makeBigCup(scene, pos) {
     const fall = t => t <= 0 ? 0 : V0 * t + 0.5 * G * t * t;                           // и обратно: путь за время t
     if (MF.segs.length) {
       // в стакане — долетевшее: порция садится через τ после вылета (τ — до нынешней поверхности); объём не убывает
-      const tS = tau(ySrc - mT.y), vols = {}; let V = 0;
+      const tS = tau(ySrc - mT.y), vols = {}; let V = 0; MF.tS = tS;
       for (const sg of MF.segs) { const a = outAt(sg, now - tS); vols[sg.kind] = (vols[sg.kind] || 0) + a; V += a; }
       if (V >= MF.V) { MF.V = V; MF.vols = vols; }
       if (!MF.doneAt && now - tS > endOf(MF.segs[MF.segs.length - 1])) { MF.doneAt = now; window.dispatchEvent(new CustomEvent('menudone')); }
@@ -1806,9 +1890,12 @@ function makeBigCup(scene, pos) {
       FADE.uFadeY.value = yA; FADE.uFadeL.value = Math.max(1e-3, yA - yB); }
     const groups = []; MF.segs.forEach((sg, i) => { if (i && MF.segs[i - 1].contNext) groups[groups.length - 1].push(sg); else groups.push([sg]); });
     const qOf = (grp, te) => { let q = 0, k = grp[0].kind, best = -1;
-      for (const sg of grp) { let f = segFlow(sg, te); if (sg === grp[0] && te - sg.ts >= 0 && te - sg.ts < RAMP_O) f = 1;   // голова — полный расход
-        f *= sg.q; q += f; if (f > best) { best = f; k = sg.kind; } } return [q, k]; };
-    const swA = MOBILE() ? 1.6 : 1;                                                    // на телефоне струя читалась «палкой»
+      for (const sg of grp) { let f = segFlow(sg, te); if (sg === grp[0] && te - sg.ts >= 0 && te - sg.ts < OPEN) f = sg.k * sg.F;   // голова — полный расход
+        q += f; if (f > best) { best = f; k = sg.kind; } } return [q, k]; };
+    // рука: протяжка рисунка — порция, вылитая в момент te, падает со сдвигом к ближнему краю (пятно → сердце)
+    const R0 = surfRad * 1.02, artMax = MF.art === 'heart' ? 0.6 : 0.86;
+    const hand = te => pullAt(te) * 0.92 * artMax * R0;
+    const swA = MOBILE() ? 1.3 : 1;                                                    // на телефоне струя читалась «палкой»
     const sway = te => [0.08 * swA * sc * (Math.sin(te * 1.9) + 0.5 * Math.sin(te * 4.7 + 1.3)), 0.06 * swA * sc * (Math.sin(te * 1.4 + 2.1) + 0.4 * Math.sin(te * 3.6))];
     const rOfQ = (q, d) => Math.sqrt(q * VW / (Math.PI * Math.sqrt(VR0 * VR0 + 2 * GR * d)));   // честная скорость на пути d (путь тот же, время — замедленное)
     let impX = mT.x, impZ = mT.z, kHit = null, rHit = 0;
@@ -1822,8 +1909,8 @@ function makeBigCup(scene, pos) {
       const mat = L.water ? mWater : L.coffee ? mCoffee : mLiqs[gi % mLiqs.length];
       if (!L.water && !L.coffee) { mat.color.setHex(L.hex); mat.emissive.setHex(L.hex).multiplyScalar(0.3); }
       mesh.material = mat;
-      const thick = (L.thick || 1) * (MOBILE() ? 1.3 : 1);                         // телефон: стакан мелкий — нитка в 3 px
-      const landed = dFront >= dBot, rFull = rOfQ(grp[0].q, d1) * thick;
+      const thick = (L.thick || 1) * (MOBILE() ? 1.15 : 1);                        // телефон: стакан мелкий — нитка в 3 px
+      const landed = dFront >= dBot, rFull = rOfQ(grp[0].k * grp[0].F, d1) * thick;
       const pos = mesh.geometry.attributes.position, uv = mesh.geometry.attributes.uv;
       let rEnd = 0;
       for (let i = 0; i <= MSEG; i++) {
@@ -1834,41 +1921,40 @@ function makeBigCup(scene, pos) {
           rr *= sF < 1 ? Math.sqrt(Math.max(0, 1 - (1 - sF) * (1 - sF))) * 1.05 : 1 + 0.05 * Math.exp(-(sF - 1) * 0.8);
         }
         if (now > t1 && u < 0.06) rr *= Math.sqrt(u / 0.06);                          // оторванная нитка закруглена сверху
+        // варикозность (Плато–Рэлей): к низу струя чуть «дышит» бусинами, узор едет с жидкостью (фаза — момент вылета)
+        { const lo = Math.min(1, d / Math.max(1e-4, dBot)); rr *= 1 + 0.07 * lo * lo * (Math.sin(te * 55) * 0.7 + Math.sin(te * 89 + 1.3) * 0.3); }
         if (landed && i === MSEG) rEnd = rr;
         if (landed && !L.water) rr *= 1 + 0.3 * Math.exp(-(ySrc - d - mT.y) / (0.015 * sc));   // удар: жидкость чуть копится (у прозрачной воды читалась «набалдашником»)
-        const tf = now - te, [sx, sz] = sway(te), y = ySrc - d;
+        const tf = now - te, [sx, sz] = sway(te), y = ySrc - d, hz = hand(te);
         for (let j = 0; j <= MRAD; j++) {
           const v = j / MRAD * Math.PI * 2, k = i * MCNT + j;
-          pos.setXYZ(k, mT.x + sx * tf + rr * Math.cos(v), y, mT.z + sz * tf + rr * Math.sin(v)); uv.setXY(k, u, j / MRAD);
+          pos.setXYZ(k, mT.x + sx * tf + rr * Math.cos(v), y, mT.z + sz * tf + hz + rr * Math.sin(v)); uv.setXY(k, u, j / MRAD);
         }
       }
       pos.needsUpdate = true; uv.needsUpdate = true; mesh.geometry.computeVertexNormals(); mesh.visible = true;
       SU.uLen.value = d1 - d0; SU.uT.value = time; SU.uGlow.value = 0.3;
       if (landed) {
         const teH = now - tau(dBot), [qh, kh] = qOf(grp, teH), [sx, sz] = sway(teH), tfH = now - teH;
-        if (qh > 0.004 && qh > MF.flux) { MF.flux = qh; kHit = kh; rHit = rEnd; impX = mT.x + sx * tfH; impZ = mT.z + sz * tfH; MF.hitMat = mat; }
+        if (qh > 0.004 && qh > MF.flux) { MF.flux = qh; kHit = kh; rHit = rEnd; impX = mT.x + sx * tfH; impZ = mT.z + sz * tfH + hand(teH); MF.hitMat = mat; }
       }
       // хвост: две капли срываются с носика после нитки и падают той же дорогой
       // (пошла следующая жидкость — капли прошлой летят внутри её струи и не видны: тёмные точки на белом молоке)
       const nextG = groups[gi + 1];
-      if (now > t1 && !(nextG && now > nextG[0].ts)) [0.18, 0.4].forEach((dt, j) => {
-        const dd = fall(now - t1 - dt), dr = tailDrops[(gi * 2 + j) % tailDrops.length];
+      if (now > t1 && L.coffee && !L.water && !(nextG && now > nextG[0].ts)) [0.2, 0.5, 1.0].forEach((dt, j) => {
+        const dd = fall(now - t1 - dt), dr = tailDrops[(gi * 3 + j) % tailDrops.length];
         if (dd < dTop || dd > dBot) return;
         const [sx, sz] = sway(t1 + dt), tf = now - t1 - dt;
-        dr.material = mat; dr.visible = true; dr.scale.set(1, 1.3, 1).multiplyScalar(Math.max(0.004 * sc, rOfQ(qN * 0.15, dd)) * (1.6 - 0.4 * j));
+        dr.material = mat; dr.visible = true; dr.scale.set(1, 1.3, 1).multiplyScalar(Math.max(0.004 * sc, rOfQ(qN * 0.15, dd)) * (1.5 - 0.25 * j));
+        if (Math.abs(ySrc - dd - mT.y) < 0.03 * sc) MF.kick = time;                    // капля упала — кружок ряби
         dr.position.set(mT.x + sx * tf, ySrc - dd, mT.z + sz * tf);
       });
     });
     MF.hit = MF.flux > 0.004; if (MF.hit) MF.kind = kHit;
     MF.imp = [impX, impZ];                                                             // точка удара — для кругов на поверхности
     const hit = MF.hit, r0 = rHit || 0.01 * sc, mat = MF.hitMat || coffeeMat;
-    // брызги удара: капли выпрыгивают из места удара и падают обратно (по кругу, у каждой своя фаза); размер — от струи
-    if (hit) splashDrops.forEach((d, i) => {
-      const ph = ((time * 2.8 + i * 0.37) % 1), ang = i * 2.4 + Math.floor(time * 2.8 + i * 0.37) * 1.7, sp = (0.18 + 0.12 * ((i * 7) % 3)) * sc;
-      d.material = mat; d.visible = true; d.scale.setScalar(r0 * (0.35 + 0.15 * (i % 3)) * (1 - ph * 0.5));
-      d.position.set(impX + Math.cos(ang) * sp * ph * 0.35, mT.y + sp * ph - 1.6 * sc * ph * ph * 0.35, impZ + Math.sin(ang) * sp * ph * 0.35);
-      if (d.position.y < mT.y) d.visible = false;
-    });
+    // брызг от удара нет: тонкая струя с высоты 5–15 см даёт ямку и рябь, а не капли (POUR_RESEARCH, 30.10) — были
+    // прыгающие шарики у места удара. Толщина струи у поверхности — для ямки на поверхности
+    MF.jet = hit ? r0 : 0;
     // брызги на стекло — только когда струя бьёт у самой кромки (поверхность ближе 0.25 высоты до неё)
     if (hit && surface.visible && h > hLipAt(FLOW.alpha) - 0.25 && MF.V > 0.7 * (MF.final || 1) && time - (MF.lastSplat || 0) > 0.45 && Math.random() < 0.7) {
       const v = mT.clone().project(cam); splat(MF.kind, Math.random() < 0.2, (v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight); MF.lastSplat = time;

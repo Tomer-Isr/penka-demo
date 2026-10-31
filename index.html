@@ -2395,7 +2395,10 @@ function makeBigCup(scene, pos) {
   function build() {
     const wordsOf = sel => { const s = splits.find(s => s.el.matches(sel)); return s ? s.st.words : []; };
     if (REDUCED) {
-      gsap.set('#say', { opacity: 1 }); gsap.set('#flood', { opacity: 1 });
+      // «уменьшить движение» (Windows с выключенными эффектами анимации — Томер 31.10, фото: на компьютере весь сайт
+      // коричневый): заливка #flood (fixed, на весь экран) включалась навсегда — снять её некому, этот выход раньше
+      // снятия по меню. Теперь заливки нет, у секции налива — свой шоколадный фон: главная белая, молоко и ниже белые
+      gsap.set('#say', { opacity: 1 }); document.getElementById('pour').style.background = 'var(--coffee)';
       document.querySelectorAll('.stamp').forEach(s => gsap.set(s, { scale: 1, rotate: -8 }));
       document.querySelectorAll('.item')[0].classList.add('on');
       return;

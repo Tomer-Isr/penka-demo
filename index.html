@@ -1024,14 +1024,14 @@ function makeBigCup(scene, pos) {
     uPour: { value: 0 }, uSwirl: { value: 0 }, uUnder: { value: new THREE.Color() }, uSpot: { value: new THREE.Color() }, uRimC: { value: new THREE.Color() },
     uSpotR: { value: 0 }, uPud: { value: 9 }, uSoft: { value: 0.1 }, uWave: { value: new THREE.Vector4() }, uIsl: { value: 0 }, uCrU: { value: 0 }, uCrS: { value: 0 }, uFoU: { value: 0 }, uFoS: { value: 0 }, uRim: { value: 0 },
     uArt: { value: 0 }, uBody: { value: new THREE.Color() }, uCrC: { value: new THREE.Color() }, uCrH: { value: 0 }, uArtR: { value: 0 }, uPull: { value: 0 },
-    uHeart: { value: 0 }, uJet: { value: 0.03 }, uMilkUp: { value: 0 }, uTip: { value: 0 } };
+    uHeart: { value: 0 }, uJet: { value: 0.03 }, uMilkUp: { value: 0 }, uTip: { value: 0 }, uArtC: { value: new THREE.Vector2() } };
   if (surfMat) surfMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, SF);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vSW; uniform vec4 uWave; uniform float uMenu, uT, uRad, uPour, uSwirl, uSpotR, uPud, uSoft, uIsl, uCrU, uCrS, uFoU, uFoS, uRim;
-      uniform float uArt, uCrH, uArtR, uPull, uHeart, uJet, uMilkUp, uTip;
+      uniform float uArt, uCrH, uArtR, uPull, uHeart, uJet, uMilkUp, uTip; uniform vec2 uArtC;
       uniform vec3 uCen, uUnder, uSpot, uRimC, uBody, uCrC; uniform vec2 uImp;
       // сердце (Иниго Килес): острие в (0,0), доли вверх до y≈1.1
       float sdHeart(vec2 p){ p.x = abs(p.x);
@@ -1040,7 +1040,9 @@ function makeBigCup(scene, pos) {
       // пятно пены: растёт кругом из места удара; протяжка тянет его в сердце острием к зрителю (+z). Сердце рисует струя:
       // выемка сзади — как только питчер подняли (uPull), перед — только там, где струя уже прошла (uTip — докуда
       // дотянула); было: одна струя бьёт в одно место, а сердце проявлялось само целиком (Томер 31.10)
-      float artD(vec2 p){ float dc = length(p) - uArtR; if (uHeart < 0.5 || uPull <= 0.0) return dc;
+      // центр рисунка — там, куда била струя, когда пошла пена (uArtC): пятно рождалось в центре чашки, в стороне от струи,
+      // и «прыгало» (Томер 31.10); uTip — от этого центра
+      float artD(vec2 p){ p -= uArtC; float dc = length(p) - uArtR; if (uHeart < 0.5 || uPull <= 0.0) return dc;
         float k = uArtR * 1.82, dh = sdHeart(vec2(p.x, -p.y) / k + vec2(0.0, 0.55)) * k;
         float passed = p.y < 0.0 ? 1.0 : smoothstep(uTip + 0.22, uTip - 0.1, p.y);   // мягко: резкая граница давала «ножку гриба»
         return mix(dc, dh, uPull * passed); }
@@ -1689,9 +1691,12 @@ function makeBigCup(scene, pos) {
   // питчер поднимают, струя тоньше. Было 0.11–0.2 (40–75 мл/с) — струя толще реальной вдвое, «непонятно толстая» (30.10)
   const RATE = { shot: 0.06, coffee: 0.08, coldbrew: 0.08, water: 0.09, milk: 0.085, foam: 0.125, oat: 0.085, almond: 0.085, lactose: 0.085, matcha: 0.08, slush: 0.09, choc: 0.04 };
   const MILKY = { milk: 1, oat: 1, almond: 1, lactose: 1 };
-  // открытие быстрое (голова сразу полной толщины), закрытие — струя сходит в нитку; молоко → пена — один питчер:
-  // расходы перетекают (XF), а не складываются; PULL — протяжка рисунка перед закрытием
-  const OPEN = 0.08, CLOSE = 0.3, XF = 0.3, GAP = 0.15, PULL = 0.55, SEG_DT = 1 / 120;
+  // открытие — струя начинается тонкой и за ~0.2 с набирает расход; закрытие долгое: расход затухает (u^2.4), струя
+  // сходит в нитку ~6 %, нитка рвётся на бусины и капли (Томер 31.10: «и в начале, и в конце одинаковая струя, резко
+  // прерывается; когда заканчивает — тоненькая, капельки»; было OPEN 0.08 / CLOSE 0.3 линейно — толщина ∝ √расхода,
+  // струя оставалась толстой до последней трети и обрывалась). Молоко → пена — один питчер: расходы перетекают (XF)
+  // линейно, сумма постоянна; PULL — протяжка рисунка перед закрытием
+  const OPEN = 0.22, CLOSE = 0.95, XF = 0.3, GAP = 0.15, PULL = 0.55, SEG_DT = 1 / 120;
   // Падение — в замедленной съёмке, как струя первой секции (g = 9.8 в мировых единицах, стакан ≈ 1): при честном g
   // стакана 12 см фронт пролетал кадр за 0.2 с — струя «возникала целиком» и падала «тяжёлым грузом» (Томер 30.10).
   // Толщина — из честной неразрывности (в замедленной съёмке расход и скорости делятся на одно число — сечение то же)
@@ -1700,13 +1705,19 @@ function makeBigCup(scene, pos) {
   // сегмент: жидкость, начало, объём; o.cin — продолжение того же питчера, o.cout — дальше он же, o.grow — питчер
   // опускают (расход растёт), o.pull — протяжка в конце. Длительность подбирается так, чтобы вылилось ровно vol
   function mkSeg(kind, ts, vol, o) {
-    const F = RATE[kind] || 0.08, oi = o.cin ? XF : OPEN, oc = o.cout ? XF : kind === 'shot' ? 0.45 : CLOSE;
+    const F = RATE[kind] || 0.08, oi = o.cin ? XF : OPEN, oc = o.cout ? XF : kind === 'shot' ? 0.7 : CLOSE;
+    // рука «дышит»: расход медленно гуляет ±16 % (эспрессо ±8 % + мелкая дрожь) — струя то тоньше, то толще; фазы — свои
+    // у каждого налива. Объём всё равно ровно по рецепту: длительность D подбирается по интегралу ниже
+    const ph1 = Math.random() * 6.28, ph2 = Math.random() * 6.28, amp = kind === 'shot' ? 0.08 : 0.16;
     const prof = (a, D) => {
       if (a <= 0 || a >= D) return 0;
       let f = F * (o.grow ? 0.8 + 0.4 * a / D : 1);
+      f *= 1 + amp * (0.6 * Math.sin(a * 2.1 + ph1) + 0.4 * Math.sin(a * 4.7 + ph2));
       if (kind === 'shot') f *= 1 + 0.06 * Math.sin(a * 9);                      // рука с питчером эспрессо не ровная
       if (o.pull) f *= 1 - 0.6 * ss(D - oc - PULL, D - oc - PULL + 0.15, a);     // протяжка: питчер подняли
-      if (a < oi) f *= a / oi; if (a > D - oc) f *= (D - a) / oc;
+      if (a < oi) { const u = a / oi; f *= o.cin ? u : u * Math.sqrt(u); }       // своё открытие — с тонкой струи
+      if (a > D - oc) { const u = (D - a) / oc;                                  // закрытие: затухание, нитка ~6 %, конец
+        f *= o.cout ? u : 0.94 * Math.pow(u, 2.4) + 0.06 * Math.min(1, u / 0.15); }
       return f; };
     const integ = D => { let v = 0; for (let a = SEG_DT / 2; a < D; a += SEG_DT) v += prof(a, D) * SEG_DT; return v; };
     let lo = oi + oc, hi = 40;
@@ -1724,7 +1735,7 @@ function makeBigCup(scene, pos) {
   // рука с питчером на протяжке: точка удара идёт от центра пятна к ближнему краю (доля радиуса поверхности, +z к зрителю)
   const pullAt = te => { const sg = MF.segs.find(g => g.pull); if (!sg) return 0;
     const t0 = sg.ts + sg.D - sg.oc - PULL; return ss(t0, t0 + PULL, te); };
-  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; MF.pudS = 0; MF.hit0 = false; MF.cr = []; MF.wd = []; MF.mc = []; MF.tip = 0; };
+  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; MF.pudS = 0; MF.hit0 = false; MF.cr = []; MF.wd = []; MF.mc = []; MF.tip = 0; MF.artC = null; MF.art0 = null; };
   // Выбор напитка — действием (Томер 29.10: «зачем наливать, если пользователь ничего не выбрал… пользователь должен
   // что-то нажать»): листание меняет напиток — стакан закрыт, оборот, новый рукав; налив — по кнопке «Налить» на
   // карточке («Заказать») или тапу по стакану. Автоналива нет (ни сразу, ни по остановке — это было в v50–v52)
@@ -1909,7 +1920,13 @@ function makeBigCup(scene, pos) {
       // после налива рисунок застыл: протяжка не зависит от расписания (оно сбрасывалось на выходе из меню — сердце
       // превращалось в круг, когда стакан летел вниз, 31.10); uTip — дальняя точка, куда дотянула струя на протяжке
       const pull = MF.doneAt && MF.art === 'heart' ? 1 : pullAt(performance.now() / 1000 - (MF.tS || 0));
-      if (MF.hit && pull > 0 && MF.imp) MF.tip = Math.max(MF.tip || 0, (MF.imp[1] - cen.z) / (surfRad * 1.02));
+      const R1 = surfRad * 1.02, ix = MF.imp ? (MF.imp[0] - cen.x) / R1 : 0, iz = MF.imp ? (MF.imp[1] - cen.z) / R1 : 0;
+      // центр пятна: точка удара, когда легла первая пена (ещё на переходе молоко → пена, когда струя считается молоком —
+      // иначе первые кадры пятно рождалось в центре чашки), дальше плавно (0.8 с) за струёй, пока нет протяжки
+      if ((MF.vols.foam || 0) > 0 && MF.hit && MF.imp) { if (!MF.artC) MF.artC = [ix, iz]; else if (pull <= 0) { const k = Math.min(1, dt / 0.8); MF.artC[0] += (ix - MF.artC[0]) * k; MF.artC[1] += (iz - MF.artC[1]) * k; } }
+      const ac = MF.artC || [0, 0]; SF.uArtC.value.set(ac[0], ac[1]);
+      if (MF.hit && pull > 0 && MF.imp) MF.tip = Math.max(MF.tip || 0, iz - ac[1]);
+      if (MF.art0 == null && SF.uArtR.value > 0.03 && MF.imp) MF.art0 = Math.hypot(ac[0] - ix, ac[1] - iz);   // для tests/: пятно стало видно — далеко ли от струи
       SF.uPull.value = pull; SF.uTip.value = MF.doneAt && MF.art === 'heart' ? Math.max(MF.tip || 0, 9) : MF.tip || 0;
       SF.uCrS.value = SF.uCrU.value = 0.8; SF.uFoS.value = SF.uFoU.value = Math.max(0.2, fr);
     }
@@ -1984,7 +2001,7 @@ function makeBigCup(scene, pos) {
       FADE.uFadeY.value = yA; FADE.uFadeL.value = Math.max(1e-3, yA - yB); }
     const groups = []; MF.segs.forEach((sg, i) => { if (i && MF.segs[i - 1].contNext) groups[groups.length - 1].push(sg); else groups.push([sg]); });
     const qOf = (grp, te) => { let q = 0, k = grp[0].kind, best = -1;
-      for (const sg of grp) { let f = segFlow(sg, te); if (sg === grp[0] && te - sg.ts >= 0 && te - sg.ts < OPEN) f = sg.k * sg.F;   // голова — полный расход
+      for (const sg of grp) { const f = segFlow(sg, te);   // голова — с открытия (тонкая), не полный расход: «в начале струя одинаково толстая» (31.10)
         q += f; if (f > best) { best = f; k = sg.kind; } } return [q, k]; };
     // рука: протяжка рисунка — порция, вылитая в момент te, падает со сдвигом к ближнему краю (пятно → сердце)
     const R0 = surfRad * 1.02, artMax = MF.art === 'heart' ? 0.6 : 0.86;
@@ -2018,7 +2035,9 @@ function makeBigCup(scene, pos) {
         }
         if (now > t1 && u < 0.06) rr *= Math.sqrt(u / 0.06);                          // оторванная нитка закруглена сверху
         // варикозность (Плато–Рэлей): к низу струя чуть «дышит» бусинами, узор едет с жидкостью (фаза — момент вылета)
-        { const lo = Math.min(1, d / Math.max(1e-4, dBot)); rr *= 1 + 0.07 * lo * lo * (Math.sin(te * 55) * 0.7 + Math.sin(te * 89 + 1.3) * 0.3); }
+        // тонкая нитка (закрытие, расход < 30 % обычного) бусинится сильнее — вот-вот распадётся на капли
+        { const lo = Math.min(1, d / Math.max(1e-4, dBot)), thin = 1 - Math.min(1, q / (0.3 * qN));
+          rr *= 1 + (0.07 * lo * lo + 0.38 * thin * lo) * (Math.sin(te * 55) * 0.7 + Math.sin(te * 89 + 1.3) * 0.3); }
         if (landed && i === MSEG) rEnd = rr;
         if (landed && !L.water) rr *= 1 + 0.3 * Math.exp(-(ySrc - d - mT.y) / (0.015 * sc));   // удар: жидкость чуть копится (у прозрачной воды читалась «набалдашником»)
         const tf = now - te, [sx, sz] = sway(te), y = ySrc - d, hz = hand(te);
@@ -2049,7 +2068,7 @@ function makeBigCup(scene, pos) {
       // хвост: две капли срываются с носика после нитки и падают той же дорогой
       // (пошла следующая жидкость — капли прошлой летят внутри её струи и не видны: тёмные точки на белом молоке)
       const nextG = groups[gi + 1];
-      if (now > t1 && L.coffee && !L.water && !(nextG && now > nextG[0].ts)) [0.2, 0.5, 1.0].forEach((dt, j) => {
+      if (now > t1 && !(nextG && now > nextG[0].ts)) [0.2, 0.5, 1.0].forEach((dt, j) => {   // капли у всех жидкостей (было — только кофе)
         const dd = fall(now - t1 - dt), dr = tailDrops[(gi * 3 + j) % tailDrops.length];
         if (dd < dTop || dd > dBot) return;
         const [sx, sz] = sway(t1 + dt), tf = now - t1 - dt;

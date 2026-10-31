@@ -75,7 +75,7 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
    и он выезжал из-под её края кусками (Томер 25.10). Гаснет, когда экран занимает меню того же цвета */
 .flood{position:fixed;inset:0;background:var(--coffee);z-index:1;opacity:0;pointer-events:none}
 .flood.gone{display:none}
-.pour .wrap{height:100%;display:flex;align-items:center}
+.pour .wrap{height:100%;display:flex;align-items:flex-end;padding-bottom:10vh}   /* к низу секции: по центру под ним полэкрана пусто до «Что пьём сегодня» (Томер 31.10) */
 .pour .say{color:var(--foam);max-width:760px;display:flex;flex-direction:column;gap:22px}
 .pour h2{font-size:clamp(44px,6vw,92px)}
 .pour p{font-size:20px;color:rgba(239,230,220,.78);max-width:34ch}
@@ -111,15 +111,24 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
   background:radial-gradient(circle at 34% 30%,rgba(255,255,255,var(--h,.6)) 0 11%,transparent 14%),radial-gradient(circle at 50% 58%,var(--c) 0 58%,var(--e) 100%);box-shadow:0 1px 1.5px rgba(0,0,0,.28)}
 .splat i+i{animation-delay:.36s}
 @media (prefers-reduced-motion:reduce){.splats{display:none}}
-/* телефон: пока меню на экране, листает страница (один свайп — один напиток), не браузер */
-html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .menu .wrap{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:40px;padding-block:14vh}
 .menu .list{display:flex;flex-direction:column}
 .item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:24px;padding:7vh 0;opacity:.35;transition:opacity .4s}
 .item+.item{border-top:1px solid rgba(239,230,220,.14)}
 .item.on{opacity:1}
 .item{position:relative}
-.count{display:none}
+/* счётчик и стрелки «листать вбок» (31.10: меню больше не держит вертикальную прокрутку — напитки листаются в сторону) */
+.count{display:flex;align-items:center;gap:10px;padding:2vh 0 4vh;font-size:13px;color:rgba(239,230,220,.6);font-variant-numeric:tabular-nums}
+.count b{color:var(--foam);font-size:15px}
+.count .hint{margin-left:auto;letter-spacing:.04em;transition:opacity .4s}
+.count .arr{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;border:1px solid rgba(239,230,220,.35);background:transparent;color:var(--foam);cursor:pointer;padding:0;transition:opacity .25s,background .2s}
+.count .arr:hover:not(:disabled){background:rgba(239,230,220,.14)}
+.count .arr:disabled{opacity:.28;cursor:default}
+.count .arr:focus-visible{outline:2px solid var(--foam);outline-offset:3px}
+.count .arr svg{width:20px;height:20px}
+.count .hint::after{content:" →";display:inline-block;animation:nudge 1.6s ease-in-out infinite}
+.count.later .hint{opacity:0}
+@keyframes nudge{50%{transform:translateX(4px)}}
 /* выбор — действием (Томер 29.10: «пользователь должен что-то нажать, и что-то должно произойти»): налив — только по
    кнопке активного напитка (или тапу по стакану); листание меняет напиток, но не наливает */
 .pour-it{grid-column:1/-1;justify-self:start;margin-top:4px;font:600 15px/1 var(--body,inherit);color:var(--coffee);background:var(--foam);border:0;border-radius:999px;padding:12px 20px;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .3s,transform .2s}
@@ -135,14 +144,17 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
 .menu .lead{font-size:20px;color:rgba(239,230,220,.75);max-width:30ch;margin-bottom:28px}
 .menu h2{font-size:clamp(40px,5vw,76px);margin-bottom:18px}
 .menu h2,.menu .lead{position:relative;z-index:3}   /* выше холста: струя налива падает с края экрана ЗА заголовком, а не по буквам (QA 30.10) */
-/* Десктоп: меню закреплено, список — барабан. Один напиток = 0.75 экрана прокрутки, после остановки прокрутка
-   доводится до ближайшего напитка (Томер 25.10: полоборота колеса проматывало всё меню) */
+/* Десктоп: меню — один экран, не закреплено; список — барабан, активный напиток по центру. Меняется стрелками ← →,
+   клавишами и кликом по названию; колесо мыши только прокручивает страницу (31.10) */
 @media (min-width:821px){
   .menu{height:100vh;overflow:hidden}
   .menu .wrap{height:100%;padding-block:12vh 0;align-items:stretch}
   .menu .wrap>div:first-child{display:flex;flex-direction:column;min-height:0}
   .menu .drum{flex:1;min-height:0;overflow:hidden;-webkit-mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(transparent,#000 22%,#000 78%,transparent)}
   .menu .list{will-change:transform}
+  .item{cursor:pointer}
+  .item.on{cursor:default}
+  .item:not(.on):hover{opacity:.6}
 }
 
 /* молоко: светлая волна возвращает тему */
@@ -218,15 +230,11 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
   .item p{font-size:15px}
   /* одна карточка напитка (Томер 29.10: «на телефоне — один вид кофе, свайп — следующий»): соседей не видно,
      активный въезжает; полоски ожидания нет — свайп и есть выбор; внизу счётчик и подсказка на первом */
-  .item{opacity:0;transform:translateY(18px);transition:opacity .45s,transform .55s cubic-bezier(.2,.8,.3,1)}
+  .item{opacity:0;transform:translateX(var(--dx,0px));transition:opacity .45s,transform .55s cubic-bezier(.2,.8,.3,1)}   /* сдвиг вбок по направлению листания (--dx ставит main.js) */
   .item.on{opacity:1;transform:none}
+  .menu .stage,.menu .drum{touch-action:pan-y}   /* горизонталь — наш свайп, вертикаль — страница */
   .item+.item{border-top:0}
-  .count{display:flex;align-items:baseline;gap:10px;padding:0 0 calc(18px + env(safe-area-inset-bottom,0px));font-size:13px;color:rgba(239,230,220,.6);font-variant-numeric:tabular-nums}
-  .count b{color:var(--foam);font-size:15px}
-  .count .hint{margin-left:auto;letter-spacing:.04em;transition:opacity .4s}
-  .count .hint::after{content:" ↑";display:inline-block;animation:nudge 1.6s ease-in-out infinite}
-  .count.later .hint{opacity:0}
-  @keyframes nudge{50%{transform:translateY(-4px)}}
+  .count{padding:0 0 calc(14px + env(safe-area-inset-bottom,0px))}
   .stamps{height:auto;padding-block:14vh}
   .cup-spot{display:block;height:30svh;pointer-events:none}
   .stamps .wrap>div:first-child,.visit .wrap{position:relative}
@@ -237,8 +245,9 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
   .pour .before{padding-top:44vh}
   .pour .before h2{font-size:38px;max-width:11ch}
   .pour .before h2,.pour .say{max-width:100%}
+  .pour .wrap{padding-bottom:16vh}   /* к 0.87 налива заголовок целиком в кадре (test_structure) */
 }
-@media (prefers-reduced-motion:reduce){ .btn,.item{transition:none} .stamp{transform:none} }
+@media (prefers-reduced-motion:reduce){ .btn,.item{transition:none} .stamp{transform:none} .count .hint::after{animation:none} }
 </style>
 
 <canvas id="cup" aria-hidden="true"></canvas>
@@ -284,7 +293,9 @@ html.menu-lock,html.menu-lock body{touch-action:none;overscroll-behavior:none}
           <div class="item" data-sleeve="#5aa9d6" data-label="ice coffee"><h3>Айс-кафе</h3><span class="price">17 ₪</span><p>Израильский холодный: кофе, молоко и лёд, взбитые в густую шугу.</p><button class="pour-it" type="button">Заказать</button></div>
           <div class="item" data-sleeve="#1c1d22" data-label="cold brew"><h3>Колд брю</h3><span class="price">16 ₪</span><p>Настаиваем шестнадцать часов. Лёд кладём по запросу.</p><button class="pour-it" type="button">Заказать</button></div>
         </div></div>
-        <div class="count" aria-hidden="true"><b id="cnum">01</b><span id="ctot">/ 09</span><span class="hint">листай — другие</span></div>
+        <div class="count"><b id="cnum" aria-hidden="true">01</b><span id="ctot" aria-hidden="true">/ 09</span><span class="hint" aria-hidden="true">листай вбок</span>
+          <button class="arr" type="button" data-d="-1" aria-label="Предыдущий напиток"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+          <button class="arr" type="button" data-d="1" aria-label="Следующий напиток"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button></div>
       </div>
       <div aria-hidden="true"></div>
     </div>
@@ -591,11 +602,12 @@ function makeBeans(scene, cam) {
   const mat = new THREE.MeshPhysicalMaterial({ color: 0x4a2412, roughness: 0.42, clearcoat: 0.55, clearcoatRoughness: 0.32, sheen: 0.3, sheenColor: new THREE.Color(0.7, 0.45, 0.3) });
   // [x, y в долях экрана (NDC), глубина z (к зрителю +), размер]
   const SPOTS = {
-    // телефон: только над текстом (текст — ниже y ≈ 0.1), крупнее — экран узкий
+    // телефон: только над текстом (текст — ниже y ≈ 0.1) и под шапкой (выше y ≈ 0.8 — логотип и статус), крупнее —
+    // экран узкий. Два зерна стояли на 0.97–0.98 — срезаны верхним краем (Томер 31.10) — перенесены левее стакана
     mob: [[-0.8, 0.72, 0.9, 0.095], [0.72, 0.78, -0.7, 0.095], [-0.66, 0.24, 1.3, 0.09], [0.8, 0.26, 0.5, 0.095], [-0.86, 0.55, -1.3, 0.11],
-      [0.3, 0.97, -1.6, 0.11], [0.62, 0.5, 1.5, 0.085], [-0.3, 0.98, 0.3, 0.08], [0.02, 0.16, -1.0, 0.09]],
+      [-0.38, 0.47, -1.6, 0.1], [0.62, 0.5, 1.5, 0.085], [-0.15, 0.34, 0.3, 0.075], [0.02, 0.16, -1.0, 0.09]],
     desk: [[0.12, 0.7, 0.9, 0.07], [0.9, 0.6, -0.8, 0.08], [0.18, -0.35, 1.3, 0.075], [0.95, -0.2, 0.5, 0.07], [0.05, 0.25, -1.4, 0.08],
-      [0.62, 0.92, -1.7, 0.08], [0.78, -0.75, 1.4, 0.07], [0.35, -0.85, -0.6, 0.07], [0.55, 0.55, 1.6, 0.06]],
+      [0.62, 0.8, -1.7, 0.08], [0.78, -0.75, 1.4, 0.07], [0.35, -0.85, -0.6, 0.07], [0.55, 0.55, 1.6, 0.06]],
   };
   const list = SPOTS.mob.map((_, i) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = false; scene.add(m);
@@ -1035,10 +1047,12 @@ function makeBigCup(scene, pos) {
       float spotH(vec2 p){ vec2 q = surfQ(p); float s = spotOf(p, q);
         // рябь от удара — мелкая (капиллярная, λ 3–6 мм — 0.1–0.17 радиуса), неровная по кругу и гаснет к стенкам;
         // ямка — по толщине струи (1.5–2 её диаметра); было: кольца λ 7 мм через всю поверхность — «штамп» (Томер 30.10)
-        vec2 dv = p - uImp; float rI = length(dv), an = atan(dv.y, dv.x), wb = 0.02 * (sn(vec2(an * 2.0, uT * 0.6)) - 0.5);
-        float rip = (0.6 * sin((rI + wb) * 52.0 - uT * 20.0) + 0.4 * sin((rI - wb) * 36.0 - uT * 14.0 + 1.3)) * exp(-rI / 0.22) * waveAmp(rI)
+        // круги рваные: фронт гнётся по углу сильнее и рвётся на дуги (ровные кольца — «мишень», Томер 31.10)
+        vec2 dv = p - uImp; float rI = length(dv), an = atan(dv.y, dv.x), wb = 0.05 * (sn(vec2(an * 2.0, uT * 0.6)) - 0.5);
+        float arc = 0.35 + 0.65 * smoothstep(0.3, 0.7, sn(vec2(an * 3.0 + 1.7, rI * 9.0 - uT * 1.3)));
+        float rip = (0.6 * sin((rI + wb) * 52.0 - uT * 20.0) + 0.4 * sin((rI - wb) * 36.0 - uT * 14.0 + 1.3)) * exp(-rI / 0.18) * waveAmp(rI) * arc * 0.75
           - 1.6 * exp(-rI * rI / max(1e-4, 9.0 * uJet * uJet)) * uPour;
-        if (uPud < 2.0) rip += 0.8 * exp(-pow((rI - uPud) / 0.035, 2.0));             // лужица на сухом дне — валик по краю
+        if (uPud < 2.0) rip += 0.5 * exp(-pow((rI - uPud) / 0.03, 2.0));             // лужица на сухом дне — валик по краю
         float f = mix(uFoU, uFoS, s); vec2 b = bub(q * 8.0 + 4.0, 0.16, 0.12) * max(f, smoothstep(0.7, 0.95, length(p)));
         return rip * 0.004 + (b.y - b.x * 0.4) * 0.001 * (0.3 + f); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -1046,7 +1060,9 @@ function makeBigCup(scene, pos) {
         if (uMenu > 0.5) {
           vec2 p = (vSW.xz - uCen.xz) / uRad, q = surfQ(p); float r = length(p);
           // первые капли — лужица от места удара, растекается к стенкам (неровный край), а не сразу всё дно
-          if (uPud < 2.0 && length(p - uImp) > uPud * (1.0 + 0.18 * (sf(p * 3.0 + uT * 0.3) - 0.5))) discard;
+          // край плавный, неровный слегка (было ±9 % высокой частоты — рваная клякса, 31.10)
+          float pE = uPud * (1.0 + 0.07 * (sf(p * 2.2 + uT * 0.2) - 0.5)), pD = length(p - uImp);
+          if (uPud < 2.0 && pD > pE) discard;
           float s = spotOf(p, q), tig = sf(vec2(q.x * 3.0 + q.y * 1.5, q.y * 9.0 - q.x * 2.0) + uT * 0.03);
           vec3 c; float cr, fo;
           if (uArt > 0.5) {
@@ -1056,7 +1072,9 @@ function makeBigCup(scene, pos) {
             float film = smoothstep(uCrH - 0.04, uCrH + 0.2, sf(q * 3.2 + 7.0) + 0.04 * sin(uT * 0.7));
             c = mix(uBody, uCrC * (0.84 + 0.34 * tig), film);
             float dI = length(p - uImp);
-            c = mix(c, mix(uBody, vec3(0.93, 0.9, 0.85), 0.35), uMilkUp * (1.0 - smoothstep(uJet * 2.0, uJet * 6.0 + 0.04 * sn(q * 9.0 + uT * 3.0), dI)));
+            // у струи всплывает светлое клубами (шум), а не ровным светящимся диском (31.10)
+            float chA = 0.35 + 0.65 * smoothstep(0.3, 0.75, sf(q * 8.0 + vec2(uT * 1.7, -uT * 1.3)));
+            c = mix(c, mix(uBody, vec3(0.93, 0.9, 0.85), 0.35), uMilkUp * chA * (1.0 - smoothstep(uJet * 1.5, uJet * 5.0 + 0.05 * sn(q * 9.0 + uT * 3.0), dI)));
             float dA = artD(p) + 0.02 * (sf(q * 6.0 + 2.0) - 0.5), wf = 1.0 - smoothstep(-0.03, 0.012, dA);
             c = mix(c, c * 0.84, (1.0 - wf) * exp(-pow((dA - 0.03) / 0.035, 2.0)) * 0.55 * step(0.01, uArtR));  // пена отжала крему — тёмный ободок
             // микропена: белая к середине, к краю берёт цвет напитка (тонкий слой), бархатная
@@ -1082,7 +1100,13 @@ function makeBigCup(scene, pos) {
           c *= 0.94 + 0.12 * sf(q * 14.0 - 2.0) * fo;
           // у места удара — светлая пена от струи; пятно эспрессо темнее к середине (крема светлеет к краю)
           float dI = length(p - uImp);
-          if (uArt < 0.5) c = mix(c, c * 0.68, s * uCrS * (1.0 - smoothstep(0.0, uSpotR * 0.85, dI)) * step(uSpotR, 1.2)); if (uArt < 0.5) c = mix(c, uSpot * 1.1 + 0.04, uPour * (1.0 - smoothstep(0.04, 0.2 + 0.08 * sn(q * 9.0 + uT * 3.0), dI)) * 0.8);
+          if (uArt < 0.5) c = mix(c, c * 0.68, s * uCrS * (1.0 - smoothstep(0.0, uSpotR * 0.85, dI)) * step(uSpotR, 1.2)); if (uArt < 0.5) c = mix(c, uSpot * 1.1 + 0.04, uPour * (1.0 - smoothstep(0.03, 0.15 + 0.08 * sn(q * 9.0 + uT * 3.0), dI)) * 0.8 * (0.35 + 0.65 * smoothstep(0.3, 0.75, sf(q * 8.0 + vec2(uT * 1.7, -uT * 1.3)))));
+          // кипень у струи: мелкие светлые пузырьки рождаются в точке удара и мерцают (струя «въедается» в жидкость)
+          float fr = (1.0 - smoothstep(uJet * 1.2, uJet * 3.5, dI)) * uPour * step(0.66, sn(p * 95.0 + vec2(uT * 9.0, uT * 7.0)));
+          c = mix(c, c * 1.3 + 0.06, fr * 0.55);
+          // лужица на сухом дне: у края слой тонкий — просвечивает белое дно, светлее и рыжее
+          // (у кофе — янтарный край, у молока — белый: светлеет к бумаге, не к рыжему)
+          if (uPud < 2.0) c = mix(c + (1.0 - c) * 0.45 * vec3(1.0, 0.8, 0.6), c, smoothstep(0.0, 0.025 + 0.05 * uPud, pE - pD));
           // мениск у стенки
           c = mix(c, uRimC, uRim * smoothstep(0.8, 0.97, r + 0.05 * (sf(q * 5.0) - 0.5)));
           diffuseColor.rgb = c;
@@ -1666,7 +1690,7 @@ function makeBigCup(scene, pos) {
   // рука с питчером на протяжке: точка удара идёт от центра пятна к ближнему краю (доля радиуса поверхности, +z к зрителю)
   const pullAt = te => { const sg = MF.segs.find(g => g.pull); if (!sg) return 0;
     const t0 = sg.ts + sg.D - sg.oc - PULL; return ss(t0, t0 + PULL, te); };
-  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; };
+  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; MF.pudS = 0; };
   // Выбор напитка — действием (Томер 29.10: «зачем наливать, если пользователь ничего не выбрал… пользователь должен
   // что-то нажать»): листание меняет напиток — стакан закрыт, оборот, новый рукав; налив — по кнопке «Налить» на
   // карточке («Заказать») или тапу по стакану. Автоналива нет (ни сразу, ни по остановке — это было в v50–v52)
@@ -1756,7 +1780,8 @@ function makeBigCup(scene, pos) {
   // цвет жидкости на поверхности: эспрессо сначала тёмный, как его струя, крема поднимается и светлеет за ~1.8 с
   // (лужица сразу рыже-бежевая под тёмной струёй читалась подменой — QA 30.10)
   const fresh = k => k === 'shot' && MF.shotT ? Math.min(1, (performance.now() / 1000 - MF.shotT) / 1.8) : 1;
-  const colOf = k => { const c = LIQ[k].c, f = fresh(k); return f >= 1 ? c : c.map((v, j) => [0.07, 0.035, 0.016][j] * (1 - f) + v * f); };
+  // свежий эспрессо — тёмно-рыжий (#2b1408), не чёрный: почти чёрная лужица читалась чернилами (31.10)
+  const colOf = k => { const c = LIQ[k].c, f = fresh(k); return f >= 1 ? c : c.map((v, j) => [0.17, 0.08, 0.032][j] * (1 - f) + v * f); };
   const mixOf = (keys) => { const c = [0, 0, 0]; let W = 0;
     for (const k of keys) { const w = MF.vols[k] * (LIQ[k].top || 1), cc = colOf(k); W += w; for (let j = 0; j < 3; j++) c[j] += cc[j] * w; }
     return W > 0 ? c.map(v => v / W) : null; };
@@ -1792,7 +1817,11 @@ function makeBigCup(scene, pos) {
     const intoCoffee = LIQ[uL] && LIQ[uL].coffee && !LIQ[uL].water;
     SF.uSoft.value = L.soft != null ? L.soft : (intoCoffee && !L.coffee ? 0.45 : 0.1);
     // лужица: пока налито мало, жидкость лежит слоем ~1.5 мм — площадь = объём / толщина; дно покрыто — дальше уровень
-    const pud = Math.sqrt(MF.V * VFULL / 0.012 / Math.PI) / rIn(0.03);
+    // Растекание ограничено скоростью (~0.4 с до стенок): от объёма лужица покрывала дно за 0.15 с — чёрная клякса
+    // «из ниоткуда» (Томер 31.10: «неестественно начинает разбрызгиваться и наполнять»)
+    const pudV = Math.sqrt(MF.V * VFULL / 0.012 / Math.PI) / rIn(0.03);
+    MF.pudS = MF.V <= 0 ? 0 : Math.min(pudV, (MF.pudS || 0) + dt * 2.6);
+    const pud = MF.pudS;
     SF.uPud.value = pud >= 1.05 ? 9 : pud * rIn(0.03) * cup.group.scale.x / (surfRad * 1.02);
     SF.uCrS.value = (L.cr || 0) * fresh(top); SF.uFoS.value = L.fo || 0; SF.uCrU.value = (LIQ[uL].cr || 0) * fresh(uL); SF.uFoU.value = LIQ[uL].fo || 0;
     // мениск: у кофейных — светлая крема; если поверх кофе молочное — коричневое колечко у стенки (капучино)
@@ -1869,7 +1898,8 @@ function makeBigCup(scene, pos) {
       // и ближняя к зрителю точка кромки: всё, что на экране ниже неё, закрыто передней стенкой
       const m = cup.mouthWorld(new THREE.Vector3()), f = m.clone().addScaledVector(d, -rIn(0.985) * sc).project(cam); MF.dbg.rimY = (0.5 - f.y * 0.5) * innerHeight; }
     // мокрый след — только под жидкостью, не выше: у молочных «кофейный» след у линии давал коричневое кольцо (29.10)
-    M.fill(Math.max(0, h - 0.04)); cup.stainU.uWet.value = 0;
+    // пока лужица растекается, дно сухое: след по высоте уровня красил всё дно бежевым впереди лужицы (31.10)
+    M.fill((MF.pudS || 0) < 1.05 ? -1 : Math.max(0, h - 0.04)); cup.stainU.uWet.value = 0;
     // Струя. Каждая порция вылетает из носика в момент te и падает; точка на глубине d под носиком — порция, вылетевшая
     // τ(d) назад: её расход — толщина (неразрывность), её жидкость — материал. Группа — непрерывный налив одного
     // питчера (молоко → пена — одна группа); у каждой группы своя сетка: хвост эспрессо долетает, пока падает молоко.
@@ -2334,14 +2364,20 @@ function makeBigCup(scene, pos) {
         const L = lum(MILK.map((m, i) => m + (COFFEE[i] - m) * k)), on = say.classList.contains('on-coffee');
         if (!on && L < 0.163) say.classList.add('on-coffee'); else if (on && L > 0.183) say.classList.remove('on-coffee');
       });
-    } else SEQ.tl   // телефон: заголовок входит, пока стакан улетает вверх (с 0.9 был пустой коричневый кадр — аудит 29.10)
-      // 0.835, не 0.8: в 0.80–0.84 улетающий стакан шёл прямо по выезжающим словам (QA 29.10); к 0.835 он уже выше
-      // Блок едет вверх вместе с прокруткой (на всю оставшуюся длину закрепления — 1:1), а не стоит: секция ещё
-      // закреплена, и текст замирал посреди экрана, пока палец листает (Томер 29.10: «в середине останавливается»)
-      .fromTo(say, { y: () => (1 - 0.835) * CH.span * innerHeight }, { y: 0, ease: 'none', duration: 1 - 0.835 }, 0.835)
-      .to(say, { opacity: 1, duration: 0.01 }, 0.835)
-      .from(wordsOf('#say h2'), { yPercent: 110, duration: 0.06, stagger: 0.01 }, 0.835)
-      .from('#say p', { y: 20, opacity: 0, duration: 0.05 }, 0.89);
+    } else {   // заголовок входит, пока стакан улетает вверх (с 0.9 был пустой коричневый кадр — аудит 29.10)
+      // Телефон с 0.835, не 0.8: в 0.80–0.84 улетающий стакан шёл прямо по выезжающим словам (QA 29.10). Компьютер —
+      // с 0.78: стакан справа, слова слева, не пересекаются. Ветка DESK выше живёт только с кадрами Blender (выключены
+      // 25.10) — компьютер шёл этой веткой с наливом в 3 экрана, и заголовок стартовал ниже края: пустой кадр (31.10)
+      // Блок едет вверх вместе с прокруткой (1:1 на телефоне), а не стоит: секция ещё закреплена, и текст замирал
+      // посреди экрана (Томер 29.10). Старт — не ниже 95 % экрана: иначе на компьютере (налив 3 экрана) первые
+      // полэкрана он едет за краем; на телефоне ограничение не срабатывает — 1:1 (сторож test_structure п. 2в)
+      const S0 = MOBILE() ? 0.835 : 0.78, top0 = () => say.offsetTop + say.offsetParent.offsetTop;
+      SEQ.tl
+        .fromTo(say, { y: () => Math.min((1 - S0) * CH.span * innerHeight, innerHeight * 0.95 - top0()) }, { y: 0, ease: 'none', duration: 1 - S0 }, S0)
+        .to(say, { opacity: 1, duration: 0.01 }, S0)
+        .from(wordsOf('#say h2'), { yPercent: 110, duration: 0.06, stagger: 0.01 }, S0)
+        .from('#say p', { y: 20, opacity: 0, duration: 0.05 }, S0 + 0.055);
+    }
 
     // МЕНЮ: смена напитка — стакан делает оборот, рукав перекрашивается, название меняется, пока лицевая
     // сторона смотрит от зрителя (середина оборота). Оборот вернули вместо соскальзывания рукава: плоская
@@ -2381,6 +2417,7 @@ function makeBigCup(scene, pos) {
     if (stageTap) stageTap.addEventListener('click', () => menuFill(MF.label));
     const flood = document.getElementById('flood');
     ScrollTrigger.create({ trigger: '#menu', start: 'top top', onEnter: () => flood.classList.add('gone'), onLeaveBack: () => flood.classList.remove('gone') });
+    let go = () => {};
     const setItem = i => {
       if (i === cur) return;
       const dir = i > cur ? 1 : -1;
@@ -2390,69 +2427,49 @@ function makeBigCup(scene, pos) {
       if (cn) { cn.textContent = String(i + 1).padStart(2, '0'); cc.classList.toggle('later', i > 0); }
       if (inMenu) drink(i, dir);                     // до входа в меню стакан фирменный; напиток наденется при входе
     };
-    // Меню закреплено, список — барабан. Компьютер: активный напиток в середине, рядом стакан; один напиток = 0.75
-    // экрана прокрутки, остановились между напитками — прокрутка доводится до ближайшего через Lenis (замена
-    // «стопора» на перехвате колеса — Томер 25.10). Телефон — своя сцена (Томер 26.10: «стакан пропадает, есть только
-    // тексты»): стакан в окне под заголовком, напитки по одному въезжают снизу, 0.6 экрана на напиток, доводка —
-    // snap самого ScrollTrigger (дружит с инерцией пальца; доводка Lenis на касаниях не срабатывает)
+    // Меню листается ВБОК (Томер 31.10: «резкий прокрут пролетает несколько напитков, а выйти вверх очень долго»).
+    // Вертикаль всегда ведёт по странице — меню ровно один экран, без закрепления, перехвата касаний и доводки.
+    // Напиток меняют: свайп влево/вправо по стакану и карточке (телефон), стрелки ← → и клик по названию в списке
+    // (компьютер), клавиши ←/→, пока меню в кадре. Всё — через setItem (оборот стакана, рукав; налив — только кнопкой).
     {
       const MOB = MOBILE();
       const list = document.getElementById('list'), drum = list.parentElement, last = items.length - 1;
       let C = [];
       // телефон — одна карточка: прижата верхом к одной линии (по центру карточка с кнопкой и длинным описанием
-      // поднималась на стакан — 29.10); компьютер — по центру, как было
+      // поднималась на стакан — 29.10); компьютер — активный напиток по центру списка
       const measure = () => { const lt = list.getBoundingClientRect().top; C = items.map(el => { const r = el.getBoundingClientRect(); return MOB ? r.top - lt : r.top - lt + r.height / 2; }); };
-      const yAt = f => { const k = Math.min(last - 1, Math.floor(f)), t = f - k; return (MOB ? 14 : drum.clientHeight * 0.42) - (C[k] + (C[k + 1] - C[k]) * t); };
-      const setY = gsap.quickTo(list, 'y', { duration: MOB ? 0.45 : 0.6, ease: 'power3.out' });
+      const yAt = i => (MOB ? 14 : drum.clientHeight * 0.42) - C[i];
+      const setY = gsap.quickTo(list, 'y', { duration: REDUCED ? 0 : MOB ? 0.45 : 0.6, ease: 'power3.out' });
       measure(); gsap.set(list, { y: yAt(0) });
-      const pin = ScrollTrigger.create({ trigger: '#menu', start: 'top top', end: () => '+=' + innerHeight * (MOB ? 0.6 : 0.75) * last, pin: true,
-        snap: MOB && !REDUCED ? { snapTo: 1 / last, duration: { min: 0.25, max: 0.6 }, delay: 0.1, ease: 'power2.out' } : undefined,
-        onRefresh: self => { measure(); gsap.set(list, { y: yAt(self.progress * last) }); },
-        onUpdate: self => { const f = self.progress * last; setY(yAt(f)); setItem(Math.round(f)); } });
-      window.__menuPin = pin;   // для tests/
-      // Телефон: один свайп — один напиток (Томер 29.10: «чтобы на 5 позиций не крутануть, но и не задерживать»).
-      // Пока меню закреплено, касания перехватывает Observer: палец вверх — следующий, вниз — предыдущий, за жест —
-      // ровно один шаг; на краях списка жест уводит страницу дальше (к молоку / к наливу). Влетели в меню по инерции —
-      // инерция гасится на крайнем напитке (иначе смах пролетал весь список)
-      if (MOB && !REDUCED && lenis) {
-        const at = i => pin.start + (pin.end - pin.start) * i / last;
-        let done = false, lock = 0;
-        const step = dir => {
-          const now = performance.now(); if (done || now < lock) return; done = true; lock = now + 350;
-          const i = Math.round(pin.progress * last) + dir, out = i < 0 || i > last;
-          const y = i < 0 ? pin.start - innerHeight * 0.7 : i > last ? pin.end + innerHeight * 0.55 : at(i);
-          // lock: Lenis гасит свою анимацию от касаний — палец ещё двигается после шага, прокрутка вставала на полпути
-          lenis.scrollTo(y, { duration: out ? 0.8 : 0.55, easing: t => 1 - Math.pow(1 - t, 3), force: true, lock: true });
-        };
-        const obs = ScrollTrigger.observe({ target: window, type: 'touch', preventDefault: true, tolerance: 8, dragMinimum: 4, ignore: '.pour-it, .menu .stage, .menu a',   // ссылки шапки (логотип, «Открыто») — не исключение: свайп, начатый на них, тоже листает (29.10)
-
-          onPress: () => { done = false; }, onUp: () => step(1), onDown: () => step(-1) });
-        obs.disable();
-        let lift = -9; addEventListener('touchend', () => { lift = performance.now(); }, { passive: true });
-        const halt = i => { if (performance.now() - lift > 1500) return;   // только инерция после пальца, не ссылка и не автопрокрутка
-          const html = document.documentElement; html.style.overflow = 'hidden';
-          requestAnimationFrame(() => { html.style.overflow = ''; lenis.scrollTo(at(i), { immediate: true, force: true }); }); };
-        ScrollTrigger.create({ trigger: '#menu', start: () => pin.start - 3, end: () => pin.end + 3,   // ровно на первом напитке — уже меню
-          // touch-action: браузер сам не листает (обработчик на окне он считает пассивным и preventDefault не слушает)
-          onToggle: st => { document.documentElement.classList.toggle('menu-lock', st.isActive); st.isActive ? obs.enable() : obs.disable(); },
-          onEnter: () => halt(0), onEnterBack: () => halt(last) });
-        window.__menuSwipe = obs;   // для tests/
-      }
-      if (lenis && !MOB) {
-        let tid = 0;
-        lenis.on('scroll', () => {
-          clearTimeout(tid);
-          const snap = () => {
-            if (!pin.isActive) return;
-            // доводка — только когда плавная прокрутка реально встала: при медленных кадрах пауза в событиях
-            // наступала посреди хода, и меню откатывалось на прежний напиток (25.10, DEFECTS №18)
-            if (Math.abs(lenis.targetScroll - lenis.animatedScroll) > 1) { tid = setTimeout(snap, 80); return; }
-            const y = pin.start + (pin.end - pin.start) * Math.round(pin.progress * last) / last;
-            if (Math.abs(lenis.scroll - y) > 2) lenis.scrollTo(y, { duration: 0.8, easing: t => 1 - Math.pow(1 - t, 3) });
-          };
-          tid = setTimeout(snap, 160);
-        });
-      }
+      ScrollTrigger.addEventListener('refresh', () => { measure(); gsap.set(list, { y: yAt(Math.max(0, cur)) }); });
+      const shift = a => { items.forEach((el, k) => el.style.setProperty('--dx', MOB && !REDUCED ? (k < a ? '-44px' : k > a ? '44px' : '0px') : '0px'));
+        MOB ? gsap.set(list, { y: yAt(a) }) : setY(yAt(a)); };   // телефон: карточки сменяются сдвигом вбок, список не едет (иначе соседняя карточка проплывала снизу)
+      go = i => { i = Math.max(0, Math.min(last, i)); if (i === cur) return; shift(i); setItem(i); };
+      shift(0);
+      // смена по стрелке: на краях списка стрелка гаснет, а не зацикливается
+      const arrows = [...document.querySelectorAll('.menu .arr')];
+      const sync = () => arrows.forEach(b => { b.disabled = b.dataset.d === '-1' ? cur <= 0 : cur >= last; });
+      arrows.forEach(b => b.addEventListener('click', e => { e.stopPropagation(); go(cur + +b.dataset.d); sync(); }));
+      items.forEach((el, k) => el.addEventListener('click', () => { if (!MOB && k !== cur) { go(k); sync(); } }));
+      sync();
+      // клавиши — только пока меню занимает середину экрана
+      addEventListener('keydown', e => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' || e.altKey || e.ctrlKey || e.metaKey) return;
+        const r = document.getElementById('menu').getBoundingClientRect();
+        if (r.top > innerHeight * 0.5 || r.bottom < innerHeight * 0.5) return;
+        go(cur + (e.key === 'ArrowRight' ? 1 : -1)); sync();
+      });
+      // свайп: один жест — один напиток; горизонталь должна явно преобладать над вертикалью (вертикаль — страница)
+      let t0 = null;
+      const area = document.querySelector('.menu .wrap > div:first-child');
+      area.addEventListener('touchstart', e => { t0 = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null; }, { passive: true });
+      area.addEventListener('touchend', e => {
+        if (!t0 || !e.changedTouches.length) return;
+        const dx = e.changedTouches[0].clientX - t0.x, dy = e.changedTouches[0].clientY - t0.y; t0 = null;
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) { go(cur + (dx < 0 ? 1 : -1)); sync(); }
+      }, { passive: true });
+      area.addEventListener('touchcancel', () => { t0 = null; }, { passive: true });
+      window.__menuGo = i => { go(i); sync(); };   // для tests/
     }
     setItem(0);
     // Меню — от его верха до молока. Вход: стакан оборачивается в рукав текущего напитка; к молоку — снова

@@ -42,10 +42,24 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 .autopill .i{width:12px;height:12px;background:currentColor;clip-path:polygon(0 0,35% 0,35% 100%,0 100%,0 0,65% 0,100% 0,100% 100%,65% 100%,65% 0)}
 .autopill.paused .i{clip-path:polygon(10% 0,100% 50%,10% 100%)}
 .autopill:focus-visible{outline:3px solid var(--cobalt);outline-offset:3px}
-/* где мы в истории: тонкая полоска справа, до меню */
-.storybar{position:fixed;right:max(6px,env(safe-area-inset-right,0px));top:50%;transform:translateY(-50%);width:3px;height:28vh;border-radius:3px;background:rgba(128,120,110,.22);z-index:20;pointer-events:none;overflow:hidden;opacity:0;transition:opacity .4s}
-.storybar.on{opacity:1}
-.storybar i{position:absolute;left:0;top:0;width:100%;height:100%;background:var(--cobalt);transform-origin:top;transform:scaleY(0)}
+/* струйка кофе справа — навигатор по странице (Томер 31.10: «не могу попасть пальцем»): зона касания 44 px, видимая
+   струйка 8 px (светлая дорожка с контуром — видна и на белом, и на шоколадном), на конце струи пенка, бегунок — зерно.
+   Метки — секции; подпись при касании/наведении. touch-action:none только на самой зоне */
+.storybar{position:fixed;right:env(safe-area-inset-right,0px);top:50%;transform:translateY(-50%);width:44px;height:56vh;z-index:20;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;cursor:pointer;pointer-events:none;opacity:0;transition:opacity .4s}
+.storybar.on{opacity:.82;pointer-events:auto}
+.storybar.on.act,.storybar.on:hover{opacity:1}
+.sb-track{position:absolute;right:10px;top:0;bottom:0;width:8px;border-radius:8px;background:rgba(239,230,220,.78);
+  box-shadow:0 0 0 1px rgba(30,14,6,.34),0 0 0 2.5px rgba(255,255,255,.4),0 2px 10px rgba(30,14,6,.28)}
+.sb-fill{position:absolute;left:0;top:0;width:100%;height:0;border-radius:8px 8px 0 0;background:linear-gradient(90deg,#4a2c1c,var(--coffee-2) 55%,#6b4430)}
+.sb-fill::after{content:"";position:absolute;left:-1px;right:-1px;bottom:-3px;height:7px;border-radius:7px;background:var(--foam);box-shadow:0 0 0 1px rgba(90,55,38,.55)}
+.sb-mark{position:absolute;right:-3px;width:14px;height:2px;margin-top:-1px;border-radius:2px;background:rgba(30,14,6,.55);box-shadow:0 0 0 1px rgba(255,255,255,.55)}
+.sb-bean{position:absolute;right:5px;top:0;width:18px;height:18px;margin-top:-9px;pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+.sb-tip{position:absolute;right:30px;top:0;transform:translateY(-50%);white-space:nowrap;padding:7px 12px;border-radius:999px;background:var(--coffee);color:var(--foam);
+  font:600 14px/1 var(--body,inherit);box-shadow:0 0 0 1px rgba(239,230,220,.5),0 6px 18px rgba(30,14,6,.4);opacity:0;pointer-events:none;transition:opacity .2s}
+.storybar.tip .sb-tip{opacity:1}
+@media (pointer:fine){.sb-track{right:16px}.sb-bean{right:11px}.sb-tip{right:36px}}   /* мышь: дальше от полосы прокрутки браузера */
+@media (prefers-reduced-motion:reduce){.storybar,.sb-tip{transition:none}}
 
 /* nav */
 .nav{position:fixed;top:0;left:0;right:0;z-index:20;padding-top:env(safe-area-inset-top,0px);mix-blend-mode:difference;color:#fff}
@@ -161,7 +175,7 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 }
 
 /* молоко: светлая волна возвращает тему */
-.milk{position:relative;background:var(--milk);padding-block:18vh 14vh}
+.milk{position:relative;z-index:1;background:var(--milk);padding-block:18vh 14vh}   /* z 1 после #flood в разметке: даже застрявшая заливка не красит молоко (31.10); холст z 2 — выше */
 /* потёки кофе из меню (цвет = --coffee); под текстом молока, над его фоном */
 .milk .drips{position:absolute;left:0;top:-1px;width:100%;height:calc(100% + 1px);display:block;pointer-events:none}
 /* место под потёки: заголовок молока ниже длинных языков (тёмный потёк за чёрными буквами не читается) */
@@ -197,7 +211,7 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 .card small{opacity:.8;font-size:14px}
 
 /* визит */
-.visit{background:var(--ink);color:var(--milk);padding-block:16vh 6vh;position:relative}
+.visit{background:var(--ink);color:var(--milk);padding-block:16vh 6vh;position:relative;z-index:1}
 .visit .wrap{display:flex;flex-direction:column;gap:64px}
 .visit h2{font-size:clamp(56px,10vw,170px);line-height:.9}
 .visit .cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px;align-items:end}
@@ -248,7 +262,7 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
   .pour .before{padding-top:44vh}
   .pour .before h2{font-size:38px;max-width:11ch}
   .pour .before h2,.pour .say{max-width:100%}
-  .pour .wrap{padding-bottom:16vh}   /* к 0.87 налива заголовок целиком в кадре (test_structure) */
+  .pour .wrap{padding-bottom:calc(16vh + 70px)}   /* к 0.87 налива заголовок целиком в кадре (test_structure); +70 px — зазор до меню, где живёт стакан: воздух ≥ 40 px над и под ним при стакане не мельче прежнего (31.10, DEFECTS №58) */
 }
 @media (prefers-reduced-motion:reduce){ .btn,.item{transition:none} .stamp{transform:none} .count .hint::after{animation:none} }
 </style>
@@ -260,7 +274,9 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 
 <!-- автопрокрутка истории: пауза/продолжить, пока идёт; полоска — где мы в истории (до меню) -->
 <button class="autopill" id="autoPill" type="button" hidden aria-label="Пауза"><span class="i"></span><span class="t">Пауза</span></button>
-<div class="storybar" aria-hidden="true"><i id="storyFill"></i></div>
+<div class="storybar" id="storybar" aria-hidden="true"><div class="sb-track" id="sbTrack"><div class="sb-fill" id="storyFill"></div></div>
+  <svg class="sb-bean" id="sbBean" viewBox="0 0 18 18"><ellipse cx="9" cy="9" rx="5.6" ry="8" transform="rotate(35 9 9)" fill="#5a3726" stroke="#efe6dc" stroke-width="1.3"/><path d="M5.6 3.6C9.5 7 8.5 11 12.4 14.4" fill="none" stroke="#efe6dc" stroke-width="1.2" stroke-linecap="round"/></svg>
+  <div class="sb-tip" id="sbTip"></div></div>
 <main id="top">
   <section class="hero">
     <div class="wrap"><div class="copy">
@@ -700,7 +716,7 @@ function makeBigCup(scene, pos) {
 
 </script>
 <script>
-﻿(() => {
+(() => {
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const MOBILE = () => innerWidth <= 820;
   gsap.registerPlugin(ScrollTrigger, SplitText);
@@ -1008,22 +1024,26 @@ function makeBigCup(scene, pos) {
     uPour: { value: 0 }, uSwirl: { value: 0 }, uUnder: { value: new THREE.Color() }, uSpot: { value: new THREE.Color() }, uRimC: { value: new THREE.Color() },
     uSpotR: { value: 0 }, uPud: { value: 9 }, uSoft: { value: 0.1 }, uWave: { value: new THREE.Vector4() }, uIsl: { value: 0 }, uCrU: { value: 0 }, uCrS: { value: 0 }, uFoU: { value: 0 }, uFoS: { value: 0 }, uRim: { value: 0 },
     uArt: { value: 0 }, uBody: { value: new THREE.Color() }, uCrC: { value: new THREE.Color() }, uCrH: { value: 0 }, uArtR: { value: 0 }, uPull: { value: 0 },
-    uHeart: { value: 0 }, uJet: { value: 0.03 }, uMilkUp: { value: 0 } };
+    uHeart: { value: 0 }, uJet: { value: 0.03 }, uMilkUp: { value: 0 }, uTip: { value: 0 } };
   if (surfMat) surfMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, SF);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vSW;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vSW; uniform vec4 uWave; uniform float uMenu, uT, uRad, uPour, uSwirl, uSpotR, uPud, uSoft, uIsl, uCrU, uCrS, uFoU, uFoS, uRim;
-      uniform float uArt, uCrH, uArtR, uPull, uHeart, uJet, uMilkUp;
+      uniform float uArt, uCrH, uArtR, uPull, uHeart, uJet, uMilkUp, uTip;
       uniform vec3 uCen, uUnder, uSpot, uRimC, uBody, uCrC; uniform vec2 uImp;
       // сердце (Иниго Килес): острие в (0,0), доли вверх до y≈1.1
       float sdHeart(vec2 p){ p.x = abs(p.x);
         if (p.y + p.x > 1.0) return length(p - vec2(0.25, 0.75)) - 0.35355;
         vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0); return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y); }
-      // пятно пены: растёт кругом из места удара; протяжка (uPull) тянет его в сердце острием к зрителю (+z)
+      // пятно пены: растёт кругом из места удара; протяжка тянет его в сердце острием к зрителю (+z). Сердце рисует струя:
+      // выемка сзади — как только питчер подняли (uPull), перед — только там, где струя уже прошла (uTip — докуда
+      // дотянула); было: одна струя бьёт в одно место, а сердце проявлялось само целиком (Томер 31.10)
       float artD(vec2 p){ float dc = length(p) - uArtR; if (uHeart < 0.5 || uPull <= 0.0) return dc;
-        float k = uArtR * 1.7; return mix(dc, sdHeart(vec2(p.x, -p.y) / k + vec2(0.0, 0.55)) * k, uPull); }
+        float k = uArtR * 1.82, dh = sdHeart(vec2(p.x, -p.y) / k + vec2(0.0, 0.55)) * k;
+        float passed = p.y < 0.0 ? 1.0 : smoothstep(uTip + 0.22, uTip - 0.1, p.y);   // мягко: резкая граница давала «ножку гриба»
+        return mix(dc, dh, uPull * passed); }
       vec2 sh2(vec2 p){ p = vec2(dot(p,vec2(127.1,311.7)), dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
       float sn(vec2 x){ vec2 p=floor(x), w=fract(x), u=w*w*(3.0-2.0*w);
         return mix(mix(dot(sh2(p)*2.0-1.0,w), dot(sh2(p+vec2(1,0))*2.0-1.0,w-vec2(1,0)), u.x), mix(dot(sh2(p+vec2(0,1))*2.0-1.0,w-vec2(0,1)), dot(sh2(p+vec2(1,1))*2.0-1.0,w-vec2(1,1)), u.x), u.y)*0.7+0.5; }
@@ -1704,7 +1724,7 @@ function makeBigCup(scene, pos) {
   // рука с питчером на протяжке: точка удара идёт от центра пятна к ближнему краю (доля радиуса поверхности, +z к зрителю)
   const pullAt = te => { const sg = MF.segs.find(g => g.pull); if (!sg) return 0;
     const t0 = sg.ts + sg.D - sg.oc - PULL; return ss(t0, t0 + PULL, te); };
-  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; MF.pudS = 0; MF.hit0 = false; MF.cr = []; MF.wd = []; MF.mc = []; };
+  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; MF.pudS = 0; MF.hit0 = false; MF.cr = []; MF.wd = []; MF.mc = []; MF.tip = 0; };
   // Выбор напитка — действием (Томер 29.10: «зачем наливать, если пользователь ничего не выбрал… пользователь должен
   // что-то нажать»): листание меняет напиток — стакан закрыт, оборот, новый рукав; налив — по кнопке «Налить» на
   // карточке («Заказать») или тапу по стакану. Автоналива нет (ни сразу, ни по остановке — это было в v50–v52)
@@ -1886,7 +1906,11 @@ function makeBigCup(scene, pos) {
       const fr = MF.foamTot ? Math.min(1, (MF.vols.foam || 0) / MF.foamTot) : 0;
       SF.uArtR.value = (MF.art === 'heart' ? 0.6 : 0.86) * Math.sqrt(fr);
       SF.uHeart.value = MF.art === 'heart' ? 1 : 0;
-      SF.uPull.value = pullAt(performance.now() / 1000 - (MF.tS || 0));
+      // после налива рисунок застыл: протяжка не зависит от расписания (оно сбрасывалось на выходе из меню — сердце
+      // превращалось в круг, когда стакан летел вниз, 31.10); uTip — дальняя точка, куда дотянула струя на протяжке
+      const pull = MF.doneAt && MF.art === 'heart' ? 1 : pullAt(performance.now() / 1000 - (MF.tS || 0));
+      if (MF.hit && pull > 0 && MF.imp) MF.tip = Math.max(MF.tip || 0, (MF.imp[1] - cen.z) / (surfRad * 1.02));
+      SF.uPull.value = pull; SF.uTip.value = MF.doneAt && MF.art === 'heart' ? Math.max(MF.tip || 0, 9) : MF.tip || 0;
       SF.uCrS.value = SF.uCrU.value = 0.8; SF.uFoS.value = SF.uFoU.value = Math.max(0.2, fr);
     }
     MF.look = { top, under: uL, spotR: SF.uSpotR.value, sw: SF.uSwirl.value, art, artR: SF.uArtR.value, pull: SF.uPull.value };   // для tests/
@@ -1964,7 +1988,7 @@ function makeBigCup(scene, pos) {
         q += f; if (f > best) { best = f; k = sg.kind; } } return [q, k]; };
     // рука: протяжка рисунка — порция, вылитая в момент te, падает со сдвигом к ближнему краю (пятно → сердце)
     const R0 = surfRad * 1.02, artMax = MF.art === 'heart' ? 0.6 : 0.86;
-    const hand = te => pullAt(te) * 0.92 * artMax * R0;
+    const hand = te => pullAt(te) * 1.0 * artMax * R0;                                // до кончика сердца (k = 1.82 R → 1.0 R)
     const swA = MOBILE() ? 1.3 : 1;                                                    // на телефоне струя читалась «палкой»
     const sway = te => [0.08 * swA * sc * (Math.sin(te * 1.9) + 0.5 * Math.sin(te * 4.7 + 1.3)), 0.06 * swA * sc * (Math.sin(te * 1.4 + 2.1) + 0.4 * Math.sin(te * 3.6))];
     const rOfQ = (q, d) => Math.sqrt(q * VW / (Math.PI * Math.sqrt(VR0 * VR0 + 2 * GR * d)));   // честная скорость на пути d (путь тот же, время — замедленное)
@@ -2125,8 +2149,10 @@ function makeBigCup(scene, pos) {
     const w1 = ss(0.5 * H, 0.12 * H, hR.top), w2 = ss(0.62 * H + K, 0.65 * H, pc);
     if (pc <= 0.65 * H) return null;
     // зазор: стакан по высоте зазора (с воздухом), низ чуть выше заголовка меню; 24 px — свес рамки стакана ниже якоря при 0.66
-    const avail = hR.top - sR.bottom - 28, gs = Math.min(0.66, Math.max(0.3, 0.66 * avail / 226));
-    const yGap = hR.top - 12 - 24 * gs / 0.66;
+    // воздух над и под стаканом — AIR с каждой стороны (владелец 31.10: «очень маленькие отступы» — было 28 px на оба; DEFECTS №58);
+    // зазор между блоками в разметке растянут под это (`.pour .wrap` на телефоне), стакан не мельче прежнего
+    const AIR = 48, avail = hR.top - sR.bottom - 2 * AIR, gs = Math.min(0.66, Math.max(0.3, 0.66 * avail / 226));
+    const yGap = hR.top - AIR - 24 * gs / 0.66;
     const yMilk = pR.bottom - pR.height * (0.06 + 0.12 * MF.view), s0 = +spots[0].dataset.s || 0.5;
     let y = yGap + (yStage - yGap) * w1, sc = gs + (0.66 - gs) * w1;
     const hop = REDUCED ? 0 : Math.sin(Math.PI * w2);
@@ -2496,6 +2522,40 @@ function makeBigCup(scene, pos) {
         .from('#say p', { y: 20, opacity: 0, duration: 0.05 }, S0 + 0.055);
     }
 
+    // ДОВОДКА К «ДВОЙНОМУ ЭСПРЕССО» (Томер 31.10: «стаканчик улетает, а записи второй секции нет»). Стакан пошёл вверх
+    // (налив ≥ 0.75), а блок #say ещё внизу или за краем: если прокрутку остановили вниз (тишина ~0.22 с — ни колеса, ни
+    // пальца, ни движения), страница сама доезжает до положения, где блок по центру экрана, мягко (Lenis, 0.6–0.9 с,
+    // ease-out). Назад не тянет, автопрокрутку и палец не перебивает, после посадки (и ниже её) молчит — залипания нет.
+    // Цель — по раскладке (блок на месте при конце закрепления, дальше едет 1:1), а не по текущему кадру налива
+    if (lenis && !REDUCED) {
+      const A = { y: scrollY, t: 0, down: false, touch: false };
+      const bump = () => { A.t = performance.now(); };
+      addEventListener('wheel', bump, { passive: true }); addEventListener('keydown', bump);   // колесо: «тишина» считается от последнего тика колеса
+      addEventListener('touchstart', () => { A.touch = true; bump(); }, { passive: true });
+      addEventListener('touchend', () => { A.touch = false; bump(); }, { passive: true });
+      addEventListener('touchcancel', () => { A.touch = false; }, { passive: true });
+      gsap.ticker.add(() => {
+        const dy = scrollY - A.y;
+        // «ход» — быстрее 6 px за кадр: хвост плавной прокрутки Lenis (десятки px за полсекунды) остановкой пальца/колеса
+        // считается, иначе доводка стартовала бы через ~0.75 с после колеса; направление помним по любому сдвигу
+        if (Math.abs(dy) > 0.5) { A.y = scrollY; if (Math.abs(dy) > 6) A.t = performance.now(); if (!CH.settling) A.down = dy > 0; }
+        if (window.__noSettle || CH.settling || A.touch || !A.down || performance.now() - A.t < 220) return;   // __noSettle — для tests/, которые стоят в полосе налива 0.75–1 и мерят кадры
+        if (window.__auto && window.__auto.on && !window.__auto.paused) return;
+        const st = SEQ.tl.scrollTrigger, h = say.offsetHeight;
+        // по налитому (CH.p), а не по прокрутке (CH.target), и тормоза налива не снимаем: доводка снимала их, и налив
+        // проскакивал 0.32 → 0.64 за секунду, стакан не успевал вылиться (test_pour_speed, test_stain, 31.10). Два этапа:
+        // пока льётся (до 0.86, там держит край) — только до конца закрепления, налив доигрывает в своём темпе; стакан
+        // взлетел — до блока по центру
+        if (!st || CH.p < 0.75 || Math.abs(CH.p - CH.target) > 0.02) return;
+        const to = CH.p < 0.86 ? st.end - 1 : st.end + say.offsetTop + say.offsetParent.offsetTop + h / 2 - innerHeight / 2;
+        if (scrollY > to - 8 || to - scrollY > 1.6 * innerHeight) return;
+        CH.settling = true; A.down = false;
+        const stage1 = CH.p < 0.86, d = Math.min(1, (to - scrollY) / innerHeight), done = () => { if (!CH.settling) return; CH.settling = false; if (stage1) { A.down = true; A.t = performance.now() - 300; } };   // после этапа 1 — сразу ждать этап 2
+        lenis.scrollTo(to, { duration: 0.6 + 0.25 * d, easing: t => 1 - Math.pow(1 - t, 3), onComplete: done });
+        gsap.delayedCall(1.6, done);
+      });
+    }
+
     // МЕНЮ: смена напитка — стакан делает оборот, рукав перекрашивается, название меняется, пока лицевая
     // сторона смотрит от зрителя (середина оборота). Оборот вернули вместо соскальзывания рукава: плоская
     // «бумажка» смотрелась нереалистично (Томер 25.10). Чуть приподнимается в руке — тень под ним светлеет.
@@ -2505,6 +2565,9 @@ function makeBigCup(scene, pos) {
     let cur = -1, inMenu = false, labelCall = null;
     const turn = (hex, name, dir) => {
       if (!cup) return;
+      // заказанный и налитый напиток летит дальше сам (Томер 31.10: «заказали раф — летит раф, налитый, красивый»): выход
+      // к молоку (name null — фирменный рукав) и возврат в меню на тот же напиток его не сбрасывают; другой напиток — сброс
+      if (MF.poured && (name === null || name === MF.label)) return;
       const c = cup.sleeveMat.color, to = new THREE.Color(hex);
       menuPrep(name);
       if (REDUCED) { c.copy(to); cup.setLabel(name); return; }
@@ -2533,7 +2596,11 @@ function makeBigCup(scene, pos) {
     const stageTap = document.querySelector('.menu .stage');   // тап по стакану (окно сцены на телефоне) — то же, что кнопка
     if (stageTap) stageTap.addEventListener('click', () => menuFill(MF.label));
     const flood = document.getElementById('flood');
-    ScrollTrigger.create({ trigger: '#menu', start: 'top top', onEnter: () => flood.classList.add('gone'), onLeaveBack: () => flood.classList.remove('gone') });
+    // заливка снимается по ГЕОМЕТРИИ (меню дошло до верха экрана), а не по событию триггера: на компьютере (скролл
+    // колесом, пересчёт триггеров после загрузки шрифтов/смены размера окна) событие терялось, заливка оставалась
+    // поверх страницы, и молоко и все секции ниже выглядели коричневыми (Томер 31.10, DEFECTS №56)
+    const menuEl = document.getElementById('menu'), floodSync = () => flood.classList.toggle('gone', menuEl.getBoundingClientRect().top <= 0.5);
+    gsap.ticker.add(floodSync); floodSync();
     let go = () => {};
     const setItem = i => {
       if (i === cur) return;
@@ -2641,7 +2708,7 @@ function makeBigCup(scene, pos) {
     // прокрутки: темп наклона держит догонялка, она успевает), переезд к меню. Касание, колесо, клавиша — пауза, дальше
     // крутишь сам, как обычно; плашка внизу — «Пауза» / «Продолжить». Полоска справа — где мы в истории (до меню)
     {
-      const btn = document.getElementById('pourBtn'), pill = document.getElementById('autoPill'), fillEl = document.getElementById('storyFill'), bar = fillEl.parentElement;
+      const btn = document.getElementById('pourBtn'), pill = document.getElementById('autoPill');
       const st = SEQ.tl.scrollTrigger, menuTop = () => document.getElementById('menu').getBoundingClientRect().top + scrollY;
       const inOut = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
       const AUTO = { on: false, paused: false, leg: 0 };
@@ -2663,15 +2730,79 @@ function makeBigCup(scene, pos) {
         lenis.scrollTo(y, { duration: dur, easing, force: true, onComplete: next });
       };
       const pause = () => { if (!AUTO.on || AUTO.paused) return; AUTO.paused = true; if (lenis) { lenis.stop(); lenis.start(); } setPill(); };
+      AUTO.pause = pause;
       btn.addEventListener('click', () => { AUTO.on = true; AUTO.paused = false; AUTO.leg = 0; setPill(); runLeg(); });
       pill.addEventListener('click', () => { if (AUTO.paused) { AUTO.paused = false; setPill(); runLeg(); } else pause(); });
       const userInput = e => { if (e.target && e.target.closest && e.target.closest('#autoPill,#pourBtn')) return; pause(); };
       ['wheel', 'touchstart', 'keydown'].forEach(ev => addEventListener(ev, userInput, { passive: true }));
       gsap.ticker.add(() => {
-        const m = menuTop(), k = Math.max(0, Math.min(1, scrollY / m));
-        fillEl.style.transform = `scaleY(${k})`;
-        bar.classList.toggle('on', scrollY > 40 && scrollY < m + innerHeight * 0.3);
+        const m = menuTop();
         if (AUTO.on && AUTO.paused && (scrollY > m + innerHeight * 0.3 || scrollY < 10)) finish();   // ушли из истории — плашка не нужна
+      });
+    }
+
+    // ── Струйка-навигатор справа (Томер 31.10: «не могу попасть пальцем, обыграть тематически, возвращать назад»):
+    // зона касания 44 px, видимая струйка 8 px; зерно-бегунок, метки секций с подписью. Тянешь — страница едет за пальцем
+    // (Lenis, lerp), тап по метке/струйке — плавный переход, тап у верхнего конца — на главную. Касания вне зоны не трогаем
+    {
+      const bar = document.getElementById('storybar'), track = document.getElementById('sbTrack'), fill = document.getElementById('storyFill'),
+        bean = document.getElementById('sbBean'), tip = document.getElementById('sbTip');
+      const SECS = [['Наверх', null], ['Налив', '.pour'], ['Меню', '#menu'], ['Молоко', '.milk'], ['Карта гостя', '#card'], ['Адрес', '#visit']];
+      const marks = SECS.map(([label, sel]) => { const m = document.createElement('i'); m.className = 'sb-mark'; track.appendChild(m); return { label, sel, y: 0, el: m }; });
+      const limit = () => Math.max(1, (lenis ? lenis.limit : 0) || document.documentElement.scrollHeight - innerHeight);
+      const measure = () => {
+        marks.forEach(m => { if (!m.sel) return; const e = document.querySelector(m.sel); if (!e) return;
+          const r = (e.parentElement.classList.contains('pin-spacer') ? e.parentElement : e).getBoundingClientRect();
+          m.y = Math.min(limit(), Math.max(0, r.top + scrollY)); });
+        marks.forEach(m => { m.el.style.top = (m.y / limit() * 100) + '%'; });
+      };
+      measure(); ScrollTrigger.addEventListener('refresh', measure); addEventListener('resize', measure); setTimeout(measure, 1500);
+      window.__bar = { marks, limit, measure };   // для tests/
+      let drag = null, hover = null, frac = 0;
+      const H = () => track.getBoundingClientRect();
+      const fracAt = cy => { const r = H(); return Math.max(0, Math.min(1, (cy - r.top) / r.height)); };
+      const near = (cy, px) => { const r = H(); let best = null, bd = px; marks.forEach(m => { const d = Math.abs(r.top + m.y / limit() * r.height - cy); if (d <= bd) { bd = d; best = m; } }); return best; };
+      const secAt = y => { let s = marks[0]; marks.forEach(m => { if (m.sel && m.y <= y + innerHeight * 0.35) s = m; }); return s; };
+      const showTip = (txt, f) => { tip.textContent = txt; tip.style.top = (f * 100) + '%'; bar.classList.add('tip'); };
+      // цель держим сами: налив-«догонялка» у конца секции (CH.hold) сбрасывает ход Lenis в край — после него едем дальше
+      // протяжка и догон после неё — своё сглаживание (по шагу за кадр, immediate): частые lenis.scrollTo(lerp) подряд
+      // сбивали его в состояние 'native', и страница вставала; тап — обычный плавный переход Lenis
+      let goal = null, manual = false;
+      const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const tapScroll = y => lenis.scrollTo(y, { duration: Math.min(1.7, Math.max(0.8, Math.abs(y - scrollY) / innerHeight * 0.3)), easing: ease, force: true });
+      const to = (y, tap) => {
+        y = Math.max(0, Math.min(limit(), y)); goal = y; manual = !tap;
+        if (!lenis || REDUCED) { goal = null; return scrollTo(0, y); }
+        if (tap) tapScroll(y);
+      };
+      const grab = e => { if (e.pointerType === 'mouse' && e.button) return; if (window.__auto && window.__auto.pause) window.__auto.pause();
+        measure(); const r = H(), by = r.top + frac * r.height;
+        drag = { id: e.pointerId, y0: e.clientY, moved: false, off: Math.abs(e.clientY - by) < 24 ? by - e.clientY : 0 };
+        bar.setPointerCapture(e.pointerId); bar.classList.add('act'); e.preventDefault(); };
+      bar.addEventListener('pointerdown', grab);
+      bar.addEventListener('pointermove', e => {
+        if (!drag) { if (e.pointerType === 'mouse') { hover = near(e.clientY, 14); hover ? showTip(hover.label, hover.sel ? hover.y / limit() : 0) : bar.classList.remove('tip'); } return; }
+        if (!drag.moved && Math.abs(e.clientY - drag.y0) < 6) return;
+        drag.moved = true; frac = fracAt(e.clientY + drag.off); to(frac * limit(), false); showTip(secAt(frac * limit()).label, frac);
+      });
+      const end = e => { if (!drag) return; const d = drag; drag = null; bar.classList.remove('act');
+        if (!d.moved && e.type === 'pointerup') { const f = fracAt(e.clientY), m = near(e.clientY, 16);
+          const y = m ? m.y : f < 0.03 ? 0 : f * limit(); frac = y / limit(); to(y, true); showTip(m ? m.label : secAt(y).label, frac); setTimeout(() => { if (!drag) bar.classList.remove('tip'); }, 1400); }
+        else if (!hover) bar.classList.remove('tip'); };
+      bar.addEventListener('pointerup', end); bar.addEventListener('pointercancel', end);
+      bar.addEventListener('pointerleave', () => { if (!drag) { hover = null; bar.classList.remove('tip'); } });
+      // своя прокрутка пользователя (колесо, касание вне полосы, клавиша) отменяет цель
+      ['wheel', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, e => { if (!(e.target && e.target.closest && e.target.closest('#storybar'))) goal = null; }, { passive: true }));
+      gsap.ticker.add(() => {
+        if (!drag) frac = Math.max(0, Math.min(1, scrollY / limit()));
+        fill.style.height = (frac * 100) + '%'; bean.style.top = (frac * 100) + '%';
+        if (goal !== null && lenis) {
+          const hold = window.__chase && window.__chase.hold;
+          if (Math.abs(scrollY - goal) < 2) goal = null;
+          else if (manual) { if (!hold) lenis.scrollTo(scrollY + (goal - scrollY) * 0.22, { immediate: true, force: true }); }
+          else if (!drag && lenis.isScrolling !== 'smooth' && !hold) tapScroll(goal);
+        }
+        const on = scrollY > 40 || !!drag; if (bar.classList.contains('on') !== on) bar.classList.toggle('on', on);
       });
     }
 

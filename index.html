@@ -103,13 +103,16 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 .menu{background:var(--coffee);color:var(--foam);position:relative}
 /* брызги налива: капли «прилипают» по краям экрана меню, цвета жидкости, копятся; под текстом */
 .splats{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:4}   /* «на стекле» экрана: держатся при любой прокрутке */
-.menu .wrap{position:relative;z-index:1}
+.menu .wrap{position:relative;z-index:3}   /* над холстом (#cup z 2): при z 1 весь текст меню, и заголовок с его z 3 внутри, лежал под стаканом — перелёт стакана закрывал буквы (31.10) */
 .splat i+i{transform:scale(0);animation:splat-in .25s cubic-bezier(.3,1.7,.5,1) forwards}
 @keyframes splat-in{to{transform:scale(1)}}
-.splat{filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));position:absolute;width:var(--s);height:var(--s);transition:transform var(--d,0s) cubic-bezier(.5,0,.8,.6) .5s}
+.splat{filter:drop-shadow(0 1px 1px rgba(0,0,0,.35)) brightness(1);position:absolute;width:var(--s);height:var(--s);transition:transform var(--d,0s) cubic-bezier(.5,0,.8,.6) .5s}
 .splat i{display:block;width:100%;height:100%;opacity:.92;border-radius:50% 50% 48% 52%/55% 55% 45% 45%;
   background:radial-gradient(circle at 34% 30%,rgba(255,255,255,var(--h,.6)) 0 11%,transparent 14%),radial-gradient(circle at 50% 58%,var(--c) 0 58%,var(--e) 100%);box-shadow:0 1px 1.5px rgba(0,0,0,.28)}
 .splat i+i{animation-delay:.36s}
+/* главная: капля подсыхает — теряет блеск и плотность, светлеет и чуть сжимается по краю, затем убирается из кода */
+.splat.dry{opacity:0;scale:.82;filter:drop-shadow(0 0 0 rgba(0,0,0,0)) brightness(1.3);transition:opacity 1.8s ease-in,scale 1.8s ease-out,filter 1.8s ease-out}
+.splat.dry svg ellipse{opacity:0;transition:opacity .9s ease-out}
 @media (prefers-reduced-motion:reduce){.splats{display:none}}
 .menu .wrap{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:40px;padding-block:14vh}
 .menu .list{display:flex;flex-direction:column}
@@ -143,7 +146,7 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 .item p{grid-column:1/-1;color:rgba(239,230,220,.72);font-size:17px;max-width:40ch;margin-top:-8px}
 .menu .lead{font-size:20px;color:rgba(239,230,220,.75);max-width:30ch;margin-bottom:28px}
 .menu h2{font-size:clamp(40px,5vw,76px);margin-bottom:18px}
-.menu h2,.menu .lead{position:relative;z-index:3}   /* выше холста: струя налива падает с края экрана ЗА заголовком, а не по буквам (QA 30.10) */
+.menu h2,.menu .lead{position:relative;z-index:3;text-shadow:0 1px 14px rgba(30,14,6,.6)}   /* тень держит светлые буквы, когда стакан проходит под ними (31.10) */   /* выше холста: струя налива падает с края экрана ЗА заголовком, а не по буквам (QA 30.10) */
 /* Десктоп: меню — один экран, не закреплено; список — барабан, активный напиток по центру. Меняется стрелками ← →,
    клавишами и кликом по названию; колесо мыши только прокручивает страницу (31.10) */
 @media (min-width:821px){
@@ -304,10 +307,10 @@ button.btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
   <section class="milk">
     <svg class="drips" aria-hidden="true"><path id="drips" fill="#3d2418" d=""/><path id="dripsGloss" fill="none" stroke="rgba(255,236,214,.2)" stroke-width="2.4" stroke-linecap="round" d=""/></svg>
     <div class="wrap">
+      <div class="cup-spot" data-s="0.6" aria-hidden="true"></div>
       <h2 data-split>Молоко любое. Цена та же.</h2>
       <div class="chips"><button class="chip" type="button" data-milk="milk">Обычное 3%</button><button class="chip" type="button" data-milk="oat">Овсяное</button><button class="chip" type="button" data-milk="almond">Миндальное</button><button class="chip" type="button" data-milk="lactose">Безлактозное</button></div>
       <p>Растительное не считаем дополнительной опцией. Это просто молоко.</p>
-      <div class="cup-spot" data-s="0.6" aria-hidden="true"></div>
     </div>
   </section>
 
@@ -967,6 +970,17 @@ function makeBigCup(scene, pos) {
   // брызги удара: мелкие капли выпрыгивают из места, где струя бьёт в поверхность, и падают обратно
   const splashDrops = [];
   if (R) for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), coffeeMat); d.visible = false; d.renderOrder = 2; scene.add(d); splashDrops.push(d); }
+  // Удар о мелкое дно (Томер 31.10: «струя ударилась и забрызгала стенки, потом аккуратно наполняется»): венчик капель
+  // вверх-наружу, долетевшие до стенки остаются на ней каплями (уходят под жидкость, когда она поднимется); микрокапли —
+  // изредка срываются со струи (Плато–Рэлей), летят рядом и падают. Свои пулы (splashDrops — прежние прыгающие шарики)
+  const mkPool = (n, seg) => { const a = []; if (R) for (let i = 0; i < n; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, seg, Math.max(6, seg - 2)), coffeeMat); d.visible = false; d.renderOrder = 2; d.frustumCulled = false; scene.add(d); a.push(d); } return a; };
+  const crownDrops = mkPool(18, 8), wallDots = mkPool(16, 10), microDrops = mkPool(10, 8);
+  // материалы капель — по жидкости: глянцевая бусина (тёмные «маковые зёрна» из материала струи — 31.10) и след на
+  // бумаге — тонкий слой, светлее и полупрозрачный
+  const DROPM = {}, dropMat = (k, dot) => { const key = k + (dot ? ':d' : ''); if (DROPM[key]) return DROPM[key];
+    const L = LIQ[k] || LIQ.shot, c = L.coffee && !L.water ? [0.2, 0.1, 0.045] : L.c, m = dot ? new THREE.MeshPhysicalMaterial({ roughness: 0.35, transparent: true, opacity: 0.82 })
+      : new THREE.MeshPhysicalMaterial({ roughness: 0.1, clearcoat: 1, clearcoatRoughness: 0.05 });
+    m.color.setRGB(...(dot ? c.map(v => v + (1 - v) * 0.15) : c.map(v => Math.max(v, 0.06)))); return DROPM[key] = m; };
   const sT = new THREE.Vector3(), sN = new THREE.Vector3(), sC = new THREE.Vector3(), sO = new THREE.Vector3(), sX = new THREE.Vector3();
   const drops = [];
   if (R) for (let i = 0; i < 24; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), coffeeMat); d.visible = false; scene.add(d); drops.push(d); }
@@ -1112,7 +1126,7 @@ function makeBigCup(scene, pos) {
           diffuseColor.rgb = c;
           sRough = mix(0.07, 0.62, clamp(max(fo, cr * 0.55) , 0.0, 1.0));
         }`)
-      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      .replace('#include <roughnessap_fragment>', `#include <roughnessap_fragment>
         if (uMenu > 0.5) roughnessFactor = sRough;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         if (uMenu > 0.5) { vec2 p = (vSW.xz - uCen.xz) / uRad; float h = spotH(p);
@@ -1690,7 +1704,7 @@ function makeBigCup(scene, pos) {
   // рука с питчером на протяжке: точка удара идёт от центра пятна к ближнему краю (доля радиуса поверхности, +z к зрителю)
   const pullAt = te => { const sg = MF.segs.find(g => g.pull); if (!sg) return 0;
     const t0 = sg.ts + sg.D - sg.oc - PULL; return ss(t0, t0 + PULL, te); };
-  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; MF.pudS = 0; };
+  const mfReset = () => { MF.shotT = 0; MF.concS = 0; MF.V = 0; MF.vols = {}; MF.sw = MF.swR = 0; MF.kind = null; MF.segs = []; MF.hit = false; MF.doneAt = 0; MF.spoutGap = undefined; MF.pudS = 0; MF.hit0 = false; MF.cr = []; MF.wd = []; MF.mc = []; };
   // Выбор напитка — действием (Томер 29.10: «зачем наливать, если пользователь ничего не выбрал… пользователь должен
   // что-то нажать»): листание меняет напиток — стакан закрыт, оборот, новый рукав; налив — по кнопке «Налить» на
   // карточке («Заказать») или тапу по стакану. Автоналива нет (ни сразу, ни по остановке — это было в v50–v52)
@@ -1735,23 +1749,28 @@ function makeBigCup(scene, pos) {
   // брызги «на стекле» экрана: капля вылетает из стакана (видно, откуда взялась) и прилипает к краю — только когда
   // стакан почти полон и струя бьёт у самой кромки (раньше летели с первой секунды, когда кофе бил в дно — Томер
   // 29.10: «непонятно, от чего появляются»). Слой фиксирован: держатся при любой прокрутке, как потёки; стираются
-  // обновлением страницы или возвратом в самый верх. Некоторые медленно сползают; до 60 штук
+  // обновлением страницы; вернулись на главную — подсыхают (1.8 с) и пропадают. Некоторые медленно сползают; до 60 штук.
+  // v62: вылет — по баллистике от точки удара струи (раньше — «ленивая дуга» от центра зеркала через весь экран, у компьютера
+  // 30 % капель уходили на другую сторону, мимо стакана); растёт по мере приближения к стеклу, о стекло — сплющ и растекание
   const splatBox = document.querySelector('.splats'), SPL = []; let SPLAT_ID = 0;
   const SPLAT_C = { shot: ['#5a3218', '#25120a', .55], coffee: ['#3a1d0e', '#160a04', .55], coldbrew: ['#2a150b', '#100703', .5], water: ['rgba(255,250,240,.16)', 'rgba(255,250,240,.42)', .8],
     milk: ['#f3eee6', '#cfc6b8', .7], almond: ['#eee3d2', '#c9b9a0', .7], lactose: ['#f5f2ec', '#d3cbbf', .7], choc: ['#3b1a0c', '#170904', .5], foam: ['#f8f5ef', '#d8d0c3', .7], oat: ['#ece2d0', '#c7b9a0', .7], matcha: ['#7fa63a', '#46651a', .55], slush: ['#a8805c', '#6a4b31', .55] };
-  function splat(kind, big, ox, oy) {
+  function splat(kind, big, ox, oy, cx) {
     if (!splatBox || REDUCED) return;
-    const side = ox > innerWidth / 2 ? Math.random() < 0.7 : Math.random() < 0.3, W = innerWidth, H = innerHeight;
+    // уходит в сторону, где стакан ближе к краю экрана (компьютер: стакан справа — капли справа); по центру (телефон) — как выпадет
+    const W = innerWidth, H = innerHeight, side = cx > 0.65 * W ? true : cx < 0.35 * W ? false : Math.random() < 0.5;
     const x = (side ? 0.865 + Math.random() * 0.12 : 0.015 + Math.random() * 0.12) * W, y = H * (0.12 + Math.random() * 0.82);
     const s = (big ? 9 : 3) + Math.random() * (big ? 8 : 7), [c, e, hl] = SPLAT_C[kind] || SPLAT_C.coffee;
+    // время полёта — от расстояния; g — в высотах экрана (v0 считается так, чтобы упасть ровно в точку x, y)
+    const dist = Math.hypot(x - ox, y - oy), T = Math.min(0.7, 0.42 + dist / W * 0.3), g = 2.4 * H;
     const el = document.createElement('div'); el.className = 'splat';
-    el.style.cssText = `left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;--s:${s.toFixed(1)}px;--c:${c};--e:${e};--h:${hl}`;
+    el.style.cssText = `left:${(x - s / 2).toFixed(1)}px;top:${(y - s / 2).toFixed(1)}px;--s:${s.toFixed(1)}px;--c:${c};--e:${e};--h:${hl}`;
     // форма неровная (свой радиус у каждого угла), вокруг — 2–4 капельки-спутника в сторону разлёта
     const q = () => (40 + Math.random() * 20).toFixed(0) + '%', dir = Math.atan2(y - oy, x - ox);
     let sat = '';
     for (let k = 0, n = 2 + Math.floor(Math.random() * 3); k < n; k++) {
       const d = s * (0.8 + Math.random() * 1.4), a = dir + (Math.random() - 0.5) * 1.1, ss = 1 + Math.random() * Math.min(3, s * 0.25);
-      sat += `<i style="position:absolute;left:${(s / 2 + Math.cos(a) * d - ss / 2).toFixed(1)}px;top:${(s / 2 + Math.sin(a) * d - ss / 2).toFixed(1)}px;width:${ss.toFixed(1)}px;height:${ss.toFixed(1)}px"></i>`;
+      sat += `<i style="position:absolute;left:${(s / 2 + Math.cos(a) * d - ss / 2).toFixed(1)}px;top:${(s / 2 + Math.sin(a) * d - ss / 2).toFixed(1)}px;width:${ss.toFixed(1)}px;height:${ss.toFixed(1)}px;transform:scale(0);animation:splat-in .25s cubic-bezier(.3,1.7,.5,1) ${(T + 0.04 + Math.random() * 0.1).toFixed(2)}s forwards"></i>`;
     }
     // капля — SVG: плавный неровный силуэт (9 точек, сглажены через середины), тело — градиент (кофе полупрозрачный,
     // молоко плотное), тёмный ободок по краю (так высыхает капля кофе), резкий блик сверху-слева и отсвет снизу
@@ -1764,15 +1783,35 @@ function makeBigCup(scene, pos) {
       + `<path d="${d}" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${e}" stroke-width=".09" opacity="${milky ? .5 : .9}"/>`
       + `<ellipse cx="-.32" cy="-.38" rx=".26" ry=".13" transform="rotate(-28 -.32 -.38)" fill="#fff" opacity="${hl}"/><ellipse cx=".3" cy=".42" rx=".16" ry=".06" fill="#fff" opacity="${(hl * 0.35).toFixed(2)}"/>`;
     el.innerHTML = `<svg viewBox="-1.1 -1.1 2.2 2.2" width="${s.toFixed(1)}" height="${s.toFixed(1)}" style="display:block;overflow:visible">${body}</svg>` + sat; splatBox.appendChild(el); SPL.push(el);
-    // полёт из стакана по дуге и шлепок о стекло (сплющилась и выпрямилась)
-    const dx = ox - x, dy = oy - y;
-    el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(.25)` }, { transform: `translate(${dx * 0.45}px, ${dy * 0.45 - 60}px) scale(.55)`, offset: 0.5 },
-      { transform: 'translate(0, 0) scale(1.3, .75)', offset: 0.88 }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.3,.5,.4,1)' });
-    if (s > 7 && Math.random() < 0.5) setTimeout(() => { el.style.setProperty('--d', (6 + Math.random() * 8) + 's'); el.style.transform = `translateY(${(14 + Math.random() * 40).toFixed(0)}px) scaleY(1.25)`; }, 500);
+    // полёт: x равномерно, y — под действием g; масштаб растёт к стеклу (летит на зрителя) — потом шлепок
+    const dx0 = ox - x, dy0 = oy - y, vx = -dx0 / T, vy = -dy0 / T - 0.5 * g * T;
+    el.style.transition = 'none'; el.style.transform = `translate(${dx0}px, ${dy0}px) scale(.18)`; el.style.opacity = 0;   // transition — только для потёка после посадки
+    FLY.push({ el, t0: performance.now(), T, dx0, dy0, vx, vy, g, big: s > 7 });
     while (SPL.length > 60) SPL.shift().remove();
   }
-  gsap.ticker.add(() => { if (SPL.length && scrollY < 40) { SPL.forEach(el => el.remove()); SPL.length = 0; } });   // вернулись в самый верх — стекло чистое
-  window.__splats = () => SPL.length;   // для tests/
+  const FLY = [];
+  function land(f) {   // шлепок: сплющилась о стекло, растеклась шире, застыла (ободок и блик уже в SVG)
+    const el = f.el; el.style.transition = ''; el.style.transform = ''; el.style.opacity = '';
+    el.animate([{ transform: 'scale(1,1)' }, { transform: 'scale(1.55,.6)', offset: 0.22 }, { transform: 'scale(1.3,.82)', offset: 0.55 }, { transform: 'scale(1,1)' }], { duration: 420, easing: 'ease-out' });
+    if (f.big && Math.random() < 0.5) setTimeout(() => { if (!el.classList.contains('dry')) { el.style.setProperty('--d', (6 + Math.random() * 8) + 's'); el.style.transform = `translateY(${(14 + Math.random() * 40).toFixed(0)}px) scaleY(1.25)`; } }, 500);
+  }
+  // главная (первый экран в основном в кадре): капли подсыхают 1.8 с — тускнеют, светлеют, сжимаются — и убираются;
+  // порог — верх #pour ниже середины экрана (раньше стирались мгновенно только в самом верху, scrollY < 40)
+  const pourEl = document.getElementById('pour');
+  gsap.ticker.add(() => {
+    const now = performance.now();
+    for (let i = FLY.length - 1; i >= 0; i--) {
+      const f = FLY[i], t = Math.min(f.T, (now - f.t0) / 1000), u = t / f.T;
+      if (t >= f.T) { FLY.splice(i, 1); land(f); continue; }
+      f.el.style.transform = `translate(${f.dx0 + f.vx * t}px, ${f.dy0 + f.vy * t + 0.5 * f.g * t * t}px) scale(${(0.18 + 0.82 * Math.pow(u, 2.2)).toFixed(3)})`;
+      f.el.style.opacity = Math.min(1, u / 0.1).toFixed(2);
+    }
+    if (SPL.length && pourEl && pourEl.getBoundingClientRect().top > innerHeight * 0.5) {
+      SPL.splice(0).forEach(el => { el.classList.add('dry'); setTimeout(() => { el.remove(); DRY.splice(DRY.indexOf(el), 1); }, 1900); DRY.push(el); });
+    }
+  });
+  const DRY = [];
+  window.__splats = () => SPL.length + DRY.length;   // для tests/
   const mT = new THREE.Vector3();
   // как выглядит поверхность: то, что льют сейчас (или налили последним), — пятно от струи поверх уже налитого;
   // ширина пятна — от доли его объёма (пена всплывает и расходится шире); закрутка — набирается, пока бьёт струя,
@@ -1855,6 +1894,7 @@ function makeBigCup(scene, pos) {
   function menuPour(time) {
     if (!R) return;
     menuStreams.forEach(m => m.visible = false); tailDrops.forEach(d => d.visible = false); splashDrops.forEach(d => d.visible = false);
+    crownDrops.forEach(d => d.visible = false); wallDots.forEach(d => d.visible = false); microDrops.forEach(d => d.visible = false);
     if (SEQ.on || (MF.lid < 0.02 && MF.V <= 0)) return;
     const sc = cup.group.scale.x, M = cup.stainU.uMark.value, now = performance.now() / 1000;
     cup.inner.getWorldPosition(orgW);
@@ -1928,6 +1968,8 @@ function makeBigCup(scene, pos) {
     const swA = MOBILE() ? 1.3 : 1;                                                    // на телефоне струя читалась «палкой»
     const sway = te => [0.08 * swA * sc * (Math.sin(te * 1.9) + 0.5 * Math.sin(te * 4.7 + 1.3)), 0.06 * swA * sc * (Math.sin(te * 1.4 + 2.1) + 0.4 * Math.sin(te * 3.6))];
     const rOfQ = (q, d) => Math.sqrt(q * VW / (Math.PI * Math.sqrt(VR0 * VR0 + 2 * GR * d)));   // честная скорость на пути d (путь тот же, время — замедленное)
+    const wob = (te, a) => [a * (Math.sin(te * 7.3) + 0.5 * Math.sin(te * 13.1 + 0.7)), a * (Math.cos(te * 6.1 + 1.1) + 0.5 * Math.sin(te * 11.7))];
+    const dtP = Math.min(0.05, Math.max(0, time - (MF.ptT || time))); MF.ptT = time;
     let impX = mT.x, impZ = mT.z, kHit = null, rHit = 0;
     groups.forEach((grp, gi) => {
       const t0 = grp[0].ts, t1 = endOf(grp[grp.length - 1]);
@@ -1956,16 +1998,29 @@ function makeBigCup(scene, pos) {
         if (landed && i === MSEG) rEnd = rr;
         if (landed && !L.water) rr *= 1 + 0.3 * Math.exp(-(ySrc - d - mT.y) / (0.015 * sc));   // удар: жидкость чуть копится (у прозрачной воды читалась «набалдашником»)
         const tf = now - te, [sx, sz] = sway(te), y = ySrc - d, hz = hand(te);
+        // извив (Томер 31.10: «чтобы немножко извивалась»): боковой изгиб едет вниз с жидкостью (фаза — момент вылета),
+        // к низу сильнее — до трети толщины; сечение чуть сплющено и проворачивается — живой «канат», а не трубка
+        const lo2 = Math.min(1, d / Math.max(1e-4, dBot)), [wx, wz] = wob(te, rr * 0.33 * lo2);
+        const ell = 0.12 * lo2, rot = te * 5.0;
         for (let j = 0; j <= MRAD; j++) {
-          const v = j / MRAD * Math.PI * 2, k = i * MCNT + j;
-          pos.setXYZ(k, mT.x + sx * tf + rr * Math.cos(v), y, mT.z + sz * tf + hz + rr * Math.sin(v)); uv.setXY(k, u, j / MRAD);
+          const v = j / MRAD * Math.PI * 2, k = i * MCNT + j, re = rr * (1 + ell * Math.cos(2 * (v - rot)));
+          pos.setXYZ(k, mT.x + sx * tf + wx + re * Math.cos(v), y, mT.z + sz * tf + hz + wz + re * Math.sin(v)); uv.setXY(k, u, j / MRAD);
         }
       }
       pos.needsUpdate = true; uv.needsUpdate = true; mesh.geometry.computeVertexNormals(); mesh.visible = true;
       SU.uLen.value = d1 - d0; SU.uT.value = time; SU.uGlow.value = 0.3;
       if (landed) {
         const teH = now - tau(dBot), [qh, kh] = qOf(grp, teH), [sx, sz] = sway(teH), tfH = now - teH;
-        if (qh > 0.004 && qh > MF.flux) { MF.flux = qh; kHit = kh; rHit = rEnd; impX = mT.x + sx * tfH; impZ = mT.z + sz * tfH + hand(teH); MF.hitMat = mat; }
+        const [wxH, wzH] = wob(teH, rEnd * 0.33);
+        if (qh > 0.004 && qh > MF.flux) { MF.flux = qh; kHit = kh; rHit = rEnd; impX = mT.x + sx * tfH + wxH; impZ = mT.z + sz * tfH + hand(teH) + wzH; MF.hitMat = mat; }
+      }
+      // микрокапли: со струи изредка срывается крошка (нижние 55 %, где струя «дышит» бусинами), летит рядом и падает
+      if (d1 - d0 > 0.2 * dBot && Math.random() < dtP * 3.5 * (MOBILE() ? 0.8 : 1)) {
+        const dS = d0 + (d1 - d0) * (0.45 + 0.45 * Math.random()), teS = now - tau(dS), [qS] = qOf(grp, teS);
+        if (qS > 1e-4) { const rS = rOfQ(qS, dS) * thick, [sx, sz] = sway(teS), [wx, wz] = wob(teS, rS * 0.33), a = Math.random() * Math.PI * 2, sp = (0.25 + 0.35 * Math.random()) * sc;
+          (MF.mc = MF.mc || []).push({ x: mT.x + sx * (now - teS) + wx + rS * Math.cos(a), y: ySrc - dS, z: mT.z + sz * (now - teS) + hand(teS) + wz + rS * Math.sin(a),
+            vx: Math.cos(a) * sp, vy: -(V0 + G * (now - teS)), vz: Math.sin(a) * sp, r: rS * (0.22 + 0.2 * Math.random()), k: qOf(grp, teS)[1] || kMid, t: 0 });
+          if (MF.mc.length > microDrops.length) MF.mc.shift(); }
       }
       // хвост: две капли срываются с носика после нитки и падают той же дорогой
       // (пошла следующая жидкость — капли прошлой летят внутри её струи и не видны: тёмные точки на белом молоке)
@@ -1985,9 +2040,44 @@ function makeBigCup(scene, pos) {
     // брызг от удара нет: тонкая струя с высоты 5–15 см даёт ямку и рябь, а не капли (POUR_RESEARCH, 30.10) — были
     // прыгающие шарики у места удара. Толщина струи у поверхности — для ямки на поверхности
     MF.jet = hit ? r0 : 0;
+    // Венчик: пока слой мелкий (лужица, ~1 см), удар выбрасывает капли вверх-наружу — первым касанием венчиком, дальше
+    // реже и ниже; в глубокое тонкая струя не брызжет (POUR_RESEARCH). Капля, долетевшая до стенки, остаётся на ней —
+    // чуть сползает, уходит под жидкость. Счёт — в долях высоты стакана; g — та же замедленная съёмка, что у струи
+    {
+      const g = G / sc, shallow = (MF.pudS || 0) < 1.05 ? 1 : Math.max(0, 1 - (h - Y0) / 0.07);
+      const ix = (impX - orgW.x) / sc, iz = (impZ - orgW.z) / sc, rJ = r0 / sc;
+      // скорость вылета — доля скорости струи в точке удара (выше падение — выше венчик): часть капель долетает до стенок
+      const vImp = Math.sqrt(V0 * V0 + 2 * G * Math.max(0, ySrc - orgW.y - h * sc)) / sc;
+      const spawn = n => { for (let k = 0; k < n; k++) {
+        const a = Math.random() * Math.PI * 2, vr = vImp * (0.15 + 0.2 * Math.random()), vy = vImp * (0.12 + 0.16 * Math.random()) * (0.5 + 0.5 * shallow);
+        (MF.cr = MF.cr || []).push({ x: ix + Math.cos(a) * rJ, y: h + 0.004, z: iz + Math.sin(a) * rJ, vx: Math.cos(a) * vr, vy, vz: Math.sin(a) * vr, r: rJ * (0.3 + 0.3 * Math.random()), k: MF.kind });
+        if (MF.cr.length > crownDrops.length) MF.cr.shift(); } };
+      // венчик — вместе с лужицей (surface.visible): раньше капли летели по сухому белому дну до появления жидкости
+      if (hit && surface.visible && !MF.hit0) { MF.hit0 = true; spawn(8); }
+      else if (hit && surface.visible && shallow > 0.02 && Math.random() < dtP * 10 * shallow) spawn(1);
+      MF.cr = (MF.cr || []).filter(p => {
+        p.vy -= g * dtP; p.x += p.vx * dtP; p.y += p.vy * dtP; p.z += p.vz * dtP;
+        const rr = Math.hypot(p.x, p.z), rw = rIn(Math.max(Y0, p.y));
+        if (rr > rw - p.r) {                                                           // стенка: капля остаётся следом
+          if (p.y > h + 0.005) { (MF.wd = MF.wd || []).push({ a: Math.atan2(p.z, p.x), y: p.y, r: p.r, k: p.k, t: 0 }); if (MF.wd.length > wallDots.length) MF.wd.shift(); }
+          return false; }
+        return !(p.y < h && p.vy < 0) && p.y < 1.2; });
+      MF.cr.forEach((p, i) => { const d = crownDrops[i], sp = Math.hypot(p.vx, p.vy, p.vz);
+        d.material = dropMat(p.k); d.visible = true; d.position.set(orgW.x + p.x * sc, orgW.y + p.y * sc, orgW.z + p.z * sc);
+        d.scale.set(1, 1 + Math.min(0.8, sp * 0.25), 1).multiplyScalar(p.r * sc); });
+      (MF.wd || []).forEach((w, i) => { w.t += dtP; w.y -= dtP * 0.012 * Math.exp(-w.t * 1.5);   // чуть сползает и встаёт
+        if (w.y < h) return;                                                           // ушла под жидкость
+        const d = wallDots[i], rw = rIn(w.y) * 0.995;
+        d.material = dropMat(w.k, true); d.visible = true; d.position.set(orgW.x + Math.cos(w.a) * rw * sc, orgW.y + w.y * sc, orgW.z + Math.sin(w.a) * rw * sc);
+        // капля расплющилась о стенку: пятно шире капли, к низу вытянуто потёком
+        d.rotation.set(0, -w.a, 0); d.scale.set(w.r * sc * 0.4, w.r * sc * (2.4 + 1.2 * Math.min(1, w.t)), w.r * sc * 2.3); });
+      MF.mc = (MF.mc || []).filter(m => { m.t += dtP; m.vy -= G * dtP; m.x += m.vx * dtP; m.y += m.vy * dtP; m.z += m.vz * dtP; return m.y > orgW.y + h * sc && m.t < 1.5; });
+      MF.mc.forEach((m, i) => { const d = microDrops[i]; d.material = dropMat(m.k); d.visible = true; d.position.set(m.x, m.y, m.z); d.scale.set(1, 1.4, 1).multiplyScalar(m.r); });
+    }
     // брызги на стекло — только когда струя бьёт у самой кромки (поверхность ближе 0.25 высоты до неё)
     if (hit && surface.visible && h > hLipAt(FLOW.alpha) - 0.25 && MF.V > 0.7 * (MF.final || 1) && time - (MF.lastSplat || 0) > 0.45 && Math.random() < 0.7) {
-      const v = mT.clone().project(cam); splat(MF.kind, Math.random() < 0.2, (v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight); MF.lastSplat = time;
+      const v = mT.set(MF.imp[0], cen.y, MF.imp[1]).project(cam), c = cen.clone().project(cam);   // вылет — из места, где бьёт струя
+      splat(MF.kind, Math.random() < 0.2, (v.x * 0.5 + 0.5) * innerWidth, (0.5 - v.y * 0.5) * innerHeight, (c.x * 0.5 + 0.5) * innerWidth); MF.lastSplat = time;
     }
   }
 
@@ -2024,6 +2114,28 @@ function makeBigCup(scene, pos) {
     }
     return best;
   }
+  // Перелёт стакана на телефоне после налива: вход в зазор → окно меню → молоко. Возвращает экранный якорь низа стакана
+  // (y, px), масштаб, поворот и наклон; null — стакан дальше обычных мест (.cup-spot). w1: зазор → окно меню по
+  // положению заголовка «Что пьём сегодня» (0.5 → 0.12 высоты экрана: пока зазор виден, стакан стоит в нём); w2: окно меню → молоко по центру места молока
+  // (низ окна меню на 0.62 высоты → место молока на 0.65) — стакан не уезжает за верх экрана вместе с меню, а висит в кадре, пока меню уходит, и садится в молоко
+  const cupEl = document.getElementById('cup'), menuH2 = document.querySelector('#menu h2'), sayEl = document.getElementById('say');
+  function flightPose() {
+    const H = innerHeight, sR = sayEl.getBoundingClientRect(), hR = menuH2.getBoundingClientRect(), stR = stageEl.getBoundingClientRect(), pR = spots[0].getBoundingClientRect();
+    const yStage = stR.bottom - stR.height * (0.04 + 0.16 * MF.view), pc = (pR.top + pR.bottom) / 2, K = pc - yStage;   // K — расстояние окно меню → место молока, от прокрутки не зависит
+    const w1 = ss(0.5 * H, 0.12 * H, hR.top), w2 = ss(0.62 * H + K, 0.65 * H, pc);
+    if (pc <= 0.65 * H) return null;
+    // зазор: стакан по высоте зазора (с воздухом), низ чуть выше заголовка меню; 24 px — свес рамки стакана ниже якоря при 0.66
+    const avail = hR.top - sR.bottom - 28, gs = Math.min(0.66, Math.max(0.3, 0.66 * avail / 226));
+    const yGap = hR.top - 12 - 24 * gs / 0.66;
+    const yMilk = pR.bottom - pR.height * (0.06 + 0.12 * MF.view), s0 = +spots[0].dataset.s || 0.5;
+    let y = yGap + (yStage - yGap) * w1, sc = gs + (0.66 - gs) * w1;
+    const hop = REDUCED ? 0 : Math.sin(Math.PI * w2);
+    y += (yMilk - y) * w2 - 0.07 * H * hop; sc += (s0 - sc) * w2;
+    const time = performance.now() / 1000;
+    return { w1, w2, y, sc, stage: w2 < 1, over: (w1 > 0 && w1 < 1) || (w2 > 0 && w2 < 1),
+      yaw: -0.9 * (1 - w1) + (REDUCED ? 0 : 2 * Math.PI * w2) + 0.25 * Math.sin(time * 0.4) * w2, pitch: 0.06 * (1 - MF.view) + 0.3 * hop };
+  }
+  window.__fly = () => { const f = flightPose(); return f && { w1: f.w1, w2: f.w2 }; };   // для tests/
   window.__spot = () => ({ on: SPOT.on, el: SPOT.el && SPOT.el.parentElement && SPOT.el.closest('section').className });   // для tests/
   function frame(t) {
     if (!R || !running) return;
@@ -2044,13 +2156,18 @@ function makeBigCup(scene, pos) {
     let yaw = S.yaw + S.turn, pitch = S.pitch;
     // телефон, меню: стакан стоит в окне сцены (.stage) по центру, лицом к зрителю, и едет вместе с ним — меню
     // въезжает снизу, стакан с ним; уезжает вверх — стакан тоже. Только после налива (Томер 26.10)
-    const stR = m && prog > 0.9 ? stageEl.getBoundingClientRect() : null;
-    const onStage = !!stR && stR.bottom > -40 && stR.top < innerHeight + 40;
-    // на наливе камера смотрит сверху — дно стакана уходит ниже; приподнимаем, чтобы не наезжал на название напитка
-    if (onStage) { sx = 0; sc = 0.66; sy = screenToWorldY(stR.bottom - stR.height * (0.04 + 0.16 * MF.view)); yaw = FACE(0); pitch = 0.06 * (1 - MF.view); }
+    // Телефон после налива (v62, DEFECTS №50): стакан не пропадает — он один непрерывный путь по трём местам:
+    // зазор под «Двойным эспрессо» (въезжает с прокруткой, пока читают) → окно меню (.stage) → молоко (.cup-spot
+    // над заголовком молока). Между местами — перелёт ПОД текстом: стакан проходит за заголовком (глубина), буквы читаются
+    // (было: холст z 4 поверх — на 1–2 кадра стакан закрывал «Что пьём сегодня», 31.10). Оборот и наклон в пути.
+    // Параметры путей — по экранным позициям блоков, а не по времени: прокрутка вперёд и назад идёт одним путём
+    const fp = m && prog > 0.9 ? flightPose() : null;
+    const onStage = !!fp && fp.stage;
+    if (fp) { sx = 0; sc = fp.sc; sy = screenToWorldY(fp.y); yaw = FACE(0) + fp.yaw; pitch = fp.pitch; }
     // телефон после меню: стакан в ближайшем «месте» (не на сцене меню)
     SPOT.on = false;
-    if (m && prog > 0.9 && !onStage) {
+    if (fp) { SPOT.x = sx; SPOT.y = sy; SPOT.s = sc; SPOT.el = spots[0]; SPOT.was = true; SPOT.on = true; }
+    else if (m && prog > 0.9) {
       const tg = spotTarget(), sdt = Math.min(0.1, Math.max(0, time - SPOT.t));
       if (tg) {
         const r = tg.r, s0 = +tg.el.dataset.s || 0.5, ty = screenToWorldY(r.bottom - r.height * (0.06 + 0.12 * MF.view)), tx = screenToWorldX((r.left + r.right) / 2, r.bottom);
